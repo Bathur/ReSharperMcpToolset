@@ -1,0 +1,9 @@
+# Copyright (C) 2026 Bathur.
+# Licensed under GPL-3.0-only with the Rider/ReSharper host linking permission.
+# See LICENSE and LICENSING.md in the public source root.
+
+* text=auto eol=lf
+*.jar binary
+*.zip binary
+*.dll binary
+*.pdb binary

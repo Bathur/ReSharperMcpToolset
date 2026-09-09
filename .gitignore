@@ -1,0 +1,21 @@
+# Copyright (C) 2026 Bathur.
+# Licensed under GPL-3.0-only with the Rider/ReSharper host linking permission.
+# See LICENSE and LICENSING.md in the public source root.
+
+.gradle/
+.gradle-user-home/
+.dotnet-home/
+.nuget/
+.sdk/
+.intellijPlatform/
+.kotlin/
+.idea/
+.codex/
+build/
+out/
+rider-sandbox/
+**/bin/
+**/obj/
+*.log
+*.sln.DotSettings.user
+local.properties

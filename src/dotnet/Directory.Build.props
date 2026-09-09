@@ -1,0 +1,40 @@
+<!-- Copyright (C) 2026 Bathur.
+     Licensed under GPL-3.0-only with the Rider/ReSharper host linking permission.
+     See LICENSE and LICENSING.md in the public source root. -->
+<Project>
+  <PropertyGroup>
+    <LangVersion>Latest</LangVersion>
+    <NoWarn>MSB3277</NoWarn>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>None</ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
+    <BaseIntermediateOutputPath>obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
+    <OutputPath>bin\$(MSBuildProjectName)\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <DefineConstants>TRACE;DEBUG;JET_MODE_ASSERT</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <ToolsetSourceRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..'))</ToolsetSourceRoot>
+    <PathMap>$(ToolsetSourceRoot)=/_</PathMap>
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+    <EnableSourceLink>false</EnableSourceLink>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <GenerateRepositoryUrlAttribute>false</GenerateRepositoryUrlAttribute>
+  </PropertyGroup>
+
+  <Import Project="Plugin.props" />
+
+  <ItemGroup>
+    <Reference Include="System.Xaml" />
+    <Reference Include="$(RiderBackendPath)\*.dll">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

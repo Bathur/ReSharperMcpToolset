@@ -1,0 +1,32 @@
+Gradle Wrapper attribution for the ReSharper MCP Toolset source distribution
+
+This attribution file was prepared by ReSharper MCP Toolset. It is not an
+upstream Gradle NOTICE file and does not modify the upstream license.
+
+Component: Gradle Wrapper bootstrap JAR, Gradle 8.13
+Redistributed file: gradle/wrapper/gradle-wrapper.jar
+Upstream project: https://github.com/gradle/gradle/tree/v8.13.0
+License: Apache License, Version 2.0
+License copy: Apache-2.0.txt in this directory
+
+The unmodified Wrapper JAR has SHA-256:
+81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f
+
+This matches Gradle's published 8.13 Wrapper JAR checksum:
+https://gradle.org/release-checksums/
+https://services.gradle.org/distributions/gradle-8.13-wrapper.jar.sha256
+
+Apache-2.0.txt is an unchanged copy of META-INF/LICENSE from that JAR.
+The embedded license is 10,174 bytes and has SHA-256:
+0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+The JAR does not contain a separate NOTICE file.
+
+The Wrapper bootstrap version and the Gradle distribution it launches are
+separate inputs. This project's gradle-wrapper.properties selects Gradle 9.1.0
+and records the downloaded distribution's checksum. That Gradle distribution
+and its own third-party dependencies are obtained when building; they are not
+included in this project's source archive or plugin installation ZIP.
+
+The Wrapper JAR is source-build tooling and is not part of the plugin's runtime
+installation. Its Apache license remains applicable; the project's GPL notice
+does not relicense this upstream file.

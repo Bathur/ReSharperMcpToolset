@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Copyright (C) 2026 Bathur.
+       Licensed under GPL-3.0-only with the Rider/ReSharper host linking permission.
+       See LICENSE and LICENSING.md in the public source root. -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>Bathur.ReSharperMcpToolset</AssemblyName>
+    <RootNamespace>$(AssemblyName)</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <DefineConstants>$(DefineConstants);RIDER</DefineConstants>
+  </PropertyGroup>
+</Project>

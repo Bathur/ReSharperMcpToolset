@@ -1,0 +1,21 @@
+<!-- Copyright (C) 2026 Bathur.
+     Licensed under GPL-3.0-only with the Rider/ReSharper host linking permission.
+     See LICENSE and LICENSING.md in the public source root. -->
+<Project>
+  <PropertyGroup>
+    <RiderBackendPath>$(RiderHome)\lib\ReSharperHost</RiderBackendPath>
+    <Title>ReSharper MCP Toolset</Title>
+    <Description>ReSharper C++ semantic tools and explicit existing-file project registration through Rider's built-in MCP server.</Description>
+    <Authors>Bathur</Authors>
+    <Version>$(PluginVersion)</Version>
+    <AssemblyVersion>$(PluginVersion).0</AssemblyVersion>
+    <FileVersion>$(PluginVersion).0</FileVersion>
+    <InformationalVersion>$(PluginVersion)</InformationalVersion>
+  </PropertyGroup>
+
+  <Target Name="ValidateRiderHome" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(RiderHome)' == ''" Text="RiderHome was not provided. Build through build.ps1 after configuring local.properties." />
+    <Error Condition="'$(RiderHome)' != '' and !Exists('$(RiderBackendPath)')" Text="Rider ReSharperHost assemblies were not found under '$(RiderBackendPath)'." />
+    <Error Condition="'$(PluginVersion)' == ''" Text="PluginVersion was not provided. Build through build.ps1." />
+  </Target>
+</Project>

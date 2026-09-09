@@ -1,0 +1,22 @@
+<!-- Copyright (C) 2026 Bathur.
+     Licensed under GPL-3.0-only with the Rider/ReSharper host linking permission.
+     See LICENSE and LICENSING.md in the public source root. -->
+<idea-plugin require-restart="true">
+  <id>local.bathur.resharper.mcp.toolset</id>
+  <name>ReSharper MCP Toolset</name>
+  <version>0.3.4</version>
+  <vendor>Bathur</vendor>
+  <idea-version since-build="262.9437.287" until-build="262.9437.287" />
+
+  <depends>com.intellij.modules.rider</depends>
+  <depends>com.intellij.modules.rider.cpp.core</depends>
+  <depends>com.intellij.mcpServer</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <mcpServer.mcpToolset implementation="local.bathur.resharper.mcp.toolset.ReSharperMcpToolset" />
+  </extensions>
+
+  <description><![CDATA[
+    <p>ReSharper C++ semantic tools and explicit existing-file project registration exposed through Rider's built-in MCP server.</p>
+  ]]></description>
+</idea-plugin>
