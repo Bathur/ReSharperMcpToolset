@@ -73,6 +73,8 @@ Normal structured responses use these statuses; not every status applies to ever
 
 `diagnostics[]` contains query-level `code` and `message` entries. These are distinct from code issues in `get_diagnostics.findings[]`. Invalid arguments, timeouts, and unhandled backend failures are reported as tool errors, rather than successful responses with one of the statuses above.
 
+Optional [unsuccessful call logs](../README.md#unsuccessful-call-logs) can retain non-`ok` responses and tool errors for later review. Recording a status does not classify it as a plugin defect or change its meaning above.
+
 An empty search result does not by itself prove that a symbol does not exist or that a file needs registration. Check the spelling, loaded project, index state, and the returned diagnostics first.
 
 ## Inspect a symbol

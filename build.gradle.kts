@@ -63,6 +63,21 @@ sourceSets {
         kotlin.srcDir("src/rider/main/kotlin")
         resources.srcDir("src/rider/main/resources")
     }
+    test {
+        kotlin.srcDir("src/rider/test/kotlin")
+    }
+}
+
+// A small JVM harness exercises detached logging and observation without starting Rider.
+// It uses only libraries already bundled with the locked target IDE.
+val failureLogTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("local.bathur.resharper.mcp.toolset.FailureLogTestsKt")
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(25))
+    })
+    args(layout.buildDirectory.dir("failure-log-tests").get().asFile.absolutePath)
 }
 
 tasks.withType<KotlinCompile>().configureEach {

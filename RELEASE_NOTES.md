@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.3.6
+
+- Adds optional local JSONL logging for non-`ok` responses and tool errors observed by the Kotlin frontend, including timeouts and final cancellations. Ordinary successful calls are not logged. Records support later review; an unsuccessful call is not automatically a plugin defect.
+- Adds **Record unsuccessful MCP calls** under **Settings > Advanced Settings > ReSharper MCP Toolset**, disabled by default.
+- Stores logs in Rider's log directory with a 32-record queue, a 256 KiB record limit, 8 MiB file rotation, and a 128 MiB retention target. Background writing is best effort: log loss is permitted, and tool execution does not wait for disk writes. Active log files remain readable on Windows while Rider is running.
+- Keeps the ten tool contracts, C# query implementation, RD protocol, and exact Rider target unchanged. Exceptions absorbed inside the backend are not collected by this frontend log.
+- Adds detached logging checks, including active-file reading and retention protection across separate JVM processes. Installed runtime checks cover logging boundaries, live settings toggles, and a timeout followed by a successful query; they do not repeat the full historical C++ semantic matrix.
+
+See the [logging description](README.md#unsuccessful-call-logs) and [validation record](docs/VALIDATION.md) for scope and evidence.
+
 ## 0.3.4
 
 ReSharper MCP Toolset brings ReSharper C++ intelligence to AI assistants through Rider's built-in MCP server. Its workflows are designed around Unreal Engine C++ development, from game and GameFeature modules to Rider-known Engine source.

@@ -51,6 +51,18 @@ Use `resharper_cpp_*` for C++ identities, references, hierarchies, outlines, and
 
 Review the tools exposed by your Rider MCP configuration to avoid overlapping descriptions and unwanted actions. The scope of these ten tools does not restrict the rest of Rider's MCP server. Hiding a tool from a client's direct list is not a security boundary; this project has not audited every route through Rider's tool router.
 
+## Unsuccessful call logs
+
+The plugin can record unsuccessful calls locally so they can be reviewed after an assistant finishes its task. Logging is disabled by default. Enable **Settings > Advanced Settings > ReSharper MCP Toolset > Record unsuccessful MCP calls** when needed. Disabling it stops new records; records already queued may still be written.
+
+Logs include non-`ok` responses, tool errors, timeouts, and final cancellations observed by the Kotlin frontend. A logged `not_found` or `ambiguous` result is not automatically a plugin defect. Ordinary `ok` responses, including successful code analysis that finds source errors, are not recorded. Failures before the tool entry point and exceptions absorbed inside the C# backend are outside this log's coverage.
+
+Files are stored under `resharper-mcp-toolset` in Rider's log directory, available through **Help > Show Log in Explorer**. Records contain call parameters, project and version information, response summaries, and available exception details. Full result lists and source files are not copied into the log. The files stay local and can contain project paths and identifiers.
+
+Files are created only when a call needs to be recorded and are named `cpp-mcp-failures-<UUID>-<sequence>.jsonl`. One writer in each Rider frontend instance serves all its projects and tools. Its UUID identifies the log group, and the sequence starts at zero and increases on rotation. Toggling logging or restarting the MCP client does not start a new group; restarting Rider does, when another call needs recording. Active files can be read while Rider is running.
+
+Writing is best effort: calls do not wait for disk, a full 32-record queue drops new records, and shutdown may discard queued records. Each UTF-8 JSONL record is limited to 256 KiB, including its newline. Fields, collections, and exception details are also bounded before queueing, so truncation can occur below that size; omissions are marked explicitly. Files rotate before the next complete record would exceed 8 MiB. When creating a file, initially or on rotation, the plugin aims to retain 128 MiB of its own logs by deleting the oldest closed files by modification time. This is a size target, not a fixed file count or guaranteed retention period; active files, growth between cleanup passes, and cleanup failures can exceed it. A write failure stops logging for the current Rider session without replacing a tool result or error.
+
 ## Behavior and limits
 
 - Queries depend on Rider's current project model, PSI, indexes, and settings. An empty result is not proof that a symbol or relationship cannot exist in another context.

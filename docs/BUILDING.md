@@ -125,6 +125,14 @@ Plugin Verifier is configured to check only the installed, locked Rider build. I
 
 Configuration validation can recommend removing `until-build`; this project deliberately retains the upper bound to match its exact Rider build restriction.
 
+The detached logging and call-observation checks run without launching Rider:
+
+```powershell
+pwsh -NoProfile -File .\build.ps1 failureLogTest
+```
+
+The harness uses the locked IDE's bundled libraries and writes temporary evidence under `build/failure-log-tests`. It covers bounded records, queue saturation, writer failures, file rotation/retention, active-file reading and cleanup from separate JVM processes, and preservation of tool results and exceptions. It does not exercise a loaded C++ project or the Advanced Settings UI. With dependencies already cached, `--offline '-Pkotlin.compiler.execution.strategy=in-process'` can be appended to keep Kotlin compilation in the Gradle process.
+
 When comparing a local build with a published package, use the plugin version, source revision, and checksums supplied with the release you are using. A different source revision, build configuration, or archive content can produce a different package; do not assume a local rebuild is byte-for-byte identical.
 
 ## Optional runtime validation

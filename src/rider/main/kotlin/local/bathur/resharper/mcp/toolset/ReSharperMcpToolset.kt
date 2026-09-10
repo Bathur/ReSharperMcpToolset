@@ -40,7 +40,9 @@ class ReSharperMcpToolset : McpToolset {
         column: Int,
         @McpDescription("Timeout in milliseconds; default 60000, range 1000..600000")
         timeout_ms: Int = 60_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_inspect_symbol", {
+        mapOf("file_path" to file_path, "line" to line, "column" to column, "timeout_ms" to timeout_ms)
+    }) {
         validatePosition(line, column)
         val project = currentCoroutineContext().project
         val response = withCppToolTimeout(timeout_ms, 600_000, "symbol inspection") {
@@ -53,14 +55,12 @@ class ReSharperMcpToolset : McpToolset {
             )
         }
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("symbols", JsonArray(response.symbols.map(::inspectedSymbolJson)))
-                put("search_scope", response.searchScope)
-                put("diagnostics", diagnosticsJson(response.diagnostics))
-            }
-        )
+        buildJsonObject {
+            put("status", response.status)
+            put("symbols", JsonArray(response.symbols.map(::inspectedSymbolJson)))
+            put("search_scope", response.searchScope)
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
     }
 
     @McpTool
@@ -82,7 +82,12 @@ class ReSharperMcpToolset : McpToolset {
         max_results: Int = 100,
         @McpDescription("Timeout in milliseconds; default 60000, range 1000..600000")
         timeout_ms: Int = 60_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_search_symbols", {
+        mapOf(
+            "name" to name, "kinds" to kinds, "offset" to offset,
+            "max_results" to max_results, "timeout_ms" to timeout_ms,
+        )
+    }) {
         if (name.isBlank()) mcpFail("name must not be blank")
         validatePaging(offset, max_results)
         val project = currentCoroutineContext().project
@@ -97,15 +102,13 @@ class ReSharperMcpToolset : McpToolset {
             )
         }
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("symbols", JsonArray(response.symbols.map(::symbolSummaryJson)))
-                put("page", pageJson(response.page))
-                put("search_scope", response.searchScope)
-                put("diagnostics", diagnosticsJson(response.diagnostics))
-            }
-        )
+        buildJsonObject {
+            put("status", response.status)
+            put("symbols", JsonArray(response.symbols.map(::symbolSummaryJson)))
+            put("page", pageJson(response.page))
+            put("search_scope", response.searchScope)
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
     }
 
     @McpTool
@@ -125,7 +128,9 @@ class ReSharperMcpToolset : McpToolset {
         max_results: Int = 100,
         @McpDescription("Timeout in milliseconds; default 30000, range 1000..120000")
         timeout_ms: Int = 30_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_list_symbols_in_file", {
+        mapOf("file_path" to file_path, "offset" to offset, "max_results" to max_results, "timeout_ms" to timeout_ms)
+    }) {
         validatePaging(offset, max_results)
         val project = currentCoroutineContext().project
         val response = withCppToolTimeout(timeout_ms, 120_000, "file symbol outline") {
@@ -138,17 +143,15 @@ class ReSharperMcpToolset : McpToolset {
             )
         }
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("file_path", response.filePath)
-                if (response.ueModule.isNotEmpty()) put("ue_module", response.ueModule)
-                put("psi_context", response.psiContext)
-                put("symbols", JsonArray(response.symbols.map(::fileSymbolOccurrenceJson)))
-                put("page", pageJson(response.page))
-                put("diagnostics", diagnosticsJson(response.diagnostics))
-            }
-        )
+        buildJsonObject {
+            put("status", response.status)
+            put("file_path", response.filePath)
+            if (response.ueModule.isNotEmpty()) put("ue_module", response.ueModule)
+            put("psi_context", response.psiContext)
+            put("symbols", JsonArray(response.symbols.map(::fileSymbolOccurrenceJson)))
+            put("page", pageJson(response.page))
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
     }
 
     @McpTool
@@ -174,7 +177,13 @@ class ReSharperMcpToolset : McpToolset {
         max_results: Int = 100,
         @McpDescription("Timeout in milliseconds; default 60000, range 1000..600000")
         timeout_ms: Int = 60_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_get_diagnostics", {
+        mapOf(
+            "file_path" to file_path, "line" to line, "column" to column,
+            "min_severity" to min_severity, "offset" to offset,
+            "max_results" to max_results, "timeout_ms" to timeout_ms,
+        )
+    }) {
         if ((line == null) != (column == null)) {
             mcpFail("line and column must be provided together")
         }
@@ -200,40 +209,38 @@ class ReSharperMcpToolset : McpToolset {
             )
         }
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("file_path", response.filePath)
-                put("psi_context", response.psiContext)
-                if (response.primaryPsiLanguage.isNotEmpty()) {
-                    put("primary_psi_language", response.primaryPsiLanguage)
-                }
-                if (response.indexEvidence.isNotEmpty()) put("index_evidence", response.indexEvidence)
-                put(
-                    "query",
-                    buildJsonObject {
-                        put("min_severity", normalizedSeverity)
-                        if (line != null && column != null) {
-                            put(
-                                "position",
-                                buildJsonObject {
-                                    put("line", line)
-                                    put("column", column)
-                                }
-                            )
-                        }
-                    }
-                )
-                if (response.hasSourceFile) {
-                    put("source_file", diagnosticsSourceFileJson(response.sourceFile))
-                }
-                if (response.hasDaemon) put("daemon", diagnosticsDaemonJson(response.daemon))
-                put("findings", JsonArray(response.findings.map(::diagnosticFindingJson)))
-                put("page", pageJson(response.page))
-                put("findings_metadata", diagnosticsMetadataJson(response.findingsMetadata))
-                put("diagnostics", diagnosticsJson(response.diagnostics))
+        buildJsonObject {
+            put("status", response.status)
+            put("file_path", response.filePath)
+            put("psi_context", response.psiContext)
+            if (response.primaryPsiLanguage.isNotEmpty()) {
+                put("primary_psi_language", response.primaryPsiLanguage)
             }
-        )
+            if (response.indexEvidence.isNotEmpty()) put("index_evidence", response.indexEvidence)
+            put(
+                "query",
+                buildJsonObject {
+                    put("min_severity", normalizedSeverity)
+                    if (line != null && column != null) {
+                        put(
+                            "position",
+                            buildJsonObject {
+                                put("line", line)
+                                put("column", column)
+                            }
+                        )
+                    }
+                }
+            )
+            if (response.hasSourceFile) {
+                put("source_file", diagnosticsSourceFileJson(response.sourceFile))
+            }
+            if (response.hasDaemon) put("daemon", diagnosticsDaemonJson(response.daemon))
+            put("findings", JsonArray(response.findings.map(::diagnosticFindingJson)))
+            put("page", pageJson(response.page))
+            put("findings_metadata", diagnosticsMetadataJson(response.findingsMetadata))
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
     }
 
     @McpTool
@@ -254,7 +261,12 @@ class ReSharperMcpToolset : McpToolset {
         project_name: String? = null,
         @McpDescription("Registration timeout in milliseconds; default 30000, range 1000..120000")
         timeout_ms: Int = 30_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_add_existing_file", {
+        mapOf(
+            "parent_directory" to parent_directory, "file_path" to file_path,
+            "project_name" to project_name, "timeout_ms" to timeout_ms,
+        )
+    }) {
         val project = currentCoroutineContext().project
         val response = ExistingCppFileRegistration(project).register(
             parentDirectoryInput = parent_directory,
@@ -262,7 +274,7 @@ class ReSharperMcpToolset : McpToolset {
             projectName = project_name,
             timeoutMs = timeout_ms,
         )
-        return responseResult(response)
+        response
     }
 
     @McpTool
@@ -285,7 +297,12 @@ class ReSharperMcpToolset : McpToolset {
         max_results: Int = 100,
         @McpDescription("Timeout in milliseconds; default 60000, range 1000..600000")
         timeout_ms: Int = 60_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_get_direct_base_types", {
+        mapOf(
+            "file_path" to file_path, "line" to line, "column" to column,
+            "offset" to offset, "max_results" to max_results, "timeout_ms" to timeout_ms,
+        )
+    }) {
         validatePosition(line, column)
         validatePaging(offset, max_results)
         val project = currentCoroutineContext().project
@@ -301,16 +318,14 @@ class ReSharperMcpToolset : McpToolset {
             )
         }
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
-                put("base_types", JsonArray(response.baseTypes.map(::baseTypeJson)))
-                put("page", pageJson(response.page))
-                put("search_scope", response.searchScope)
-                put("diagnostics", diagnosticsJson(response.diagnostics))
-            }
-        )
+        buildJsonObject {
+            put("status", response.status)
+            put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
+            put("base_types", JsonArray(response.baseTypes.map(::baseTypeJson)))
+            put("page", pageJson(response.page))
+            put("search_scope", response.searchScope)
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
     }
 
     @McpTool
@@ -334,7 +349,12 @@ class ReSharperMcpToolset : McpToolset {
         max_results: Int = 100,
         @McpDescription("Timeout in milliseconds; default 60000, range 1000..600000")
         timeout_ms: Int = 60_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_find_derived_types", {
+        mapOf(
+            "file_path" to file_path, "line" to line, "column" to column,
+            "offset" to offset, "max_results" to max_results, "timeout_ms" to timeout_ms,
+        )
+    }) {
         validatePosition(line, column)
         validatePaging(offset, max_results)
         val project = currentCoroutineContext().project
@@ -350,16 +370,14 @@ class ReSharperMcpToolset : McpToolset {
             )
         }
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
-                put("derived_types", JsonArray(response.symbols.map(::relatedSymbolJson)))
-                put("page", pageJson(response.page))
-                put("search_scope", response.searchScope)
-                put("diagnostics", diagnosticsJson(response.diagnostics))
-            }
-        )
+        buildJsonObject {
+            put("status", response.status)
+            put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
+            put("derived_types", JsonArray(response.symbols.map(::relatedSymbolJson)))
+            put("page", pageJson(response.page))
+            put("search_scope", response.searchScope)
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
     }
 
     @McpTool
@@ -383,7 +401,12 @@ class ReSharperMcpToolset : McpToolset {
         max_results: Int = 100,
         @McpDescription("Timeout in milliseconds; default 60000, range 1000..600000")
         timeout_ms: Int = 60_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_get_direct_overridden_members", {
+        mapOf(
+            "file_path" to file_path, "line" to line, "column" to column,
+            "offset" to offset, "max_results" to max_results, "timeout_ms" to timeout_ms,
+        )
+    }) {
         validatePosition(line, column)
         validatePaging(offset, max_results)
         val project = currentCoroutineContext().project
@@ -399,16 +422,14 @@ class ReSharperMcpToolset : McpToolset {
             )
         }
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
-                put("overridden_members", JsonArray(response.symbols.map(::relatedSymbolJson)))
-                put("page", pageJson(response.page))
-                put("search_scope", response.searchScope)
-                put("diagnostics", diagnosticsJson(response.diagnostics))
-            }
-        )
+        buildJsonObject {
+            put("status", response.status)
+            put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
+            put("overridden_members", JsonArray(response.symbols.map(::relatedSymbolJson)))
+            put("page", pageJson(response.page))
+            put("search_scope", response.searchScope)
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
     }
 
     @McpTool
@@ -432,7 +453,12 @@ class ReSharperMcpToolset : McpToolset {
         max_results: Int = 100,
         @McpDescription("Timeout in milliseconds; default 60000, range 1000..600000")
         timeout_ms: Int = 60_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_find_overriding_members", {
+        mapOf(
+            "file_path" to file_path, "line" to line, "column" to column,
+            "offset" to offset, "max_results" to max_results, "timeout_ms" to timeout_ms,
+        )
+    }) {
         validatePosition(line, column)
         validatePaging(offset, max_results)
         val project = currentCoroutineContext().project
@@ -448,16 +474,14 @@ class ReSharperMcpToolset : McpToolset {
             )
         }
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
-                put("overriding_members", JsonArray(response.symbols.map(::relatedSymbolJson)))
-                put("page", pageJson(response.page))
-                put("search_scope", response.searchScope)
-                put("diagnostics", diagnosticsJson(response.diagnostics))
-            }
-        )
+        buildJsonObject {
+            put("status", response.status)
+            put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
+            put("overriding_members", JsonArray(response.symbols.map(::relatedSymbolJson)))
+            put("page", pageJson(response.page))
+            put("search_scope", response.searchScope)
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
     }
 
     @McpTool
@@ -481,7 +505,12 @@ class ReSharperMcpToolset : McpToolset {
         max_results: Int = 100,
         @McpDescription("Timeout in milliseconds; default 60000, range 1000..600000")
         timeout_ms: Int = 60_000,
-    ): McpToolCallResult {
+    ): McpToolCallResult = withLoggedCall("resharper_cpp_find_references", {
+        mapOf(
+            "file_path" to file_path, "line" to line, "column" to column,
+            "offset" to offset, "max_results" to max_results, "timeout_ms" to timeout_ms,
+        )
+    }) {
         validatePosition(line, column)
         validatePaging(offset, max_results)
         val project = currentCoroutineContext().project
@@ -505,16 +534,33 @@ class ReSharperMcpToolset : McpToolset {
             }
         })
 
-        return responseResult(
-            buildJsonObject {
-                put("status", response.status)
-                put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
-                put("references", references)
-                put("page", pageJson(response.page))
-                put("search_scope", response.searchScope)
-                put("diagnostics", diagnosticsJson(response.diagnostics))
-            }
-        )
+        buildJsonObject {
+            put("status", response.status)
+            put("targets", JsonArray(response.targets.map(::symbolSummaryJson)))
+            put("references", references)
+            put("page", pageJson(response.page))
+            put("search_scope", response.searchScope)
+            put("diagnostics", diagnosticsJson(response.diagnostics))
+        }
+    }
+
+    private suspend fun withLoggedCall(
+        toolName: String,
+        arguments: () -> Map<String, Any?>,
+        block: suspend () -> JsonObject,
+    ): McpToolCallResult {
+        val context = currentCoroutineContext()
+        return observeToolCall(toolName, arguments, ::responseResult, { tool, args, duration, response, failure ->
+            McpFailureLog.record(tool, args, duration, response, failure, projectDetails = {
+                try {
+                    val project = context.project
+                    project.name to project.basePath
+                } catch (_: Throwable) {
+                    // Missing or disposed project context must not hide the original failure.
+                    null to null
+                }
+            })
+        }, block)
     }
 
     private suspend fun <T> withCppToolTimeout(

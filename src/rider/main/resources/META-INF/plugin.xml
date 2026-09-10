@@ -4,8 +4,9 @@
 <idea-plugin require-restart="true">
   <id>local.bathur.resharper.mcp.toolset</id>
   <name>ReSharper MCP Toolset</name>
-  <version>0.3.4</version>
+  <version>0.3.6</version>
   <vendor>Bathur</vendor>
+  <resource-bundle>messages.ReSharperMcpToolsetBundle</resource-bundle>
   <idea-version since-build="262.9437.287" until-build="262.9437.287" />
 
   <depends>com.intellij.modules.rider</depends>
@@ -14,6 +15,9 @@
 
   <extensions defaultExtensionNs="com.intellij">
     <mcpServer.mcpToolset implementation="local.bathur.resharper.mcp.toolset.ReSharperMcpToolset" />
+    <advancedSetting id="local.bathur.resharper.mcp.toolset.failure.logging"
+                     default="false"
+                     groupKey="group.advanced.settings.resharper.mcp.toolset" />
   </extensions>
 
   <description><![CDATA[
