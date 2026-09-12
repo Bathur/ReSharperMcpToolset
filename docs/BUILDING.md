@@ -133,6 +133,14 @@ pwsh -NoProfile -File .\build.ps1 failureLogTest
 
 The harness uses the locked IDE's bundled libraries and writes temporary evidence under `build/failure-log-tests`. It covers bounded records, queue saturation, writer failures, file rotation/retention, active-file reading and cleanup from separate JVM processes, and preservation of tool results and exceptions. It does not exercise a loaded C++ project or the Advanced Settings UI. With dependencies already cached, `--offline '-Pkotlin.compiler.execution.strategy=in-process'` can be appended to keep Kotlin compilation in the Gradle process.
 
+Consumer-diagnostic regression checks also run without launching Rider:
+
+```powershell
+pwsh -NoProfile -File .\build.ps1 consumerDiagnosticsTest
+```
+
+This task rebuilds the backend and checks concise omission messages, hierarchy-result classification, relationship uncertainty, and qualifier-group child traversal against isolated objects from the locked SDK. It uses no additional test framework and does not replace validation in a loaded C++ project.
+
 When comparing a local build with a published package, use the plugin version, source revision, and checksums supplied with the release you are using. A different source revision, build configuration, or archive content can produce a different package; do not assume a local rebuild is byte-for-byte identical.
 
 ## Optional runtime validation

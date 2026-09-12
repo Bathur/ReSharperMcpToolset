@@ -123,7 +123,7 @@ namespace Bathur.ReSharperMcpToolset
                         "psi_source_registered",
                         sourceMetadata,
                         "primary_psi_file_not_available",
-                        "Rider has no valid primary PSI file for the requested source file in the current solution context.",
+                        "Semantic data is not available for this file yet.",
                         request.Offset);
                 }
 
@@ -138,7 +138,7 @@ namespace Bathur.ReSharperMcpToolset
                         "psi_source_registered_primary_psi_available",
                         sourceMetadata,
                         "cpp_daemon_unavailable",
-                        "The requested file does not have a primary C++ PSI file that provides a code model.",
+                        "C++ analysis is not available for this file.",
                         request.Offset);
                 }
 
@@ -384,23 +384,21 @@ namespace Bathur.ReSharperMcpToolset
                 {
                     responseDiagnostics.Add(Diagnostic(
                         "invalid_highlightings",
-                        $"Skipped {invalidRangeCount} daemon highlighting(s) with an invalid highlighting or document range."));
+                        "Some findings were omitted because they or their source ranges are invalid."));
                 }
 
                 if (unreadableSeverityCount > 0 || unreadableMetadataCount > 0)
                 {
                     responseDiagnostics.Add(Diagnostic(
                         "unreadable_highlightings",
-                        $"Skipped {unreadableSeverityCount} daemon highlighting(s) whose effective severity could not be read; " +
-                        $"{unreadableMetadataCount} highlighting(s) had incomplete or unreadable metadata. " +
-                        "Valid mapped findings retain every field Rider exposed reliably."));
+                        "Some findings were omitted or have incomplete metadata; see findings_metadata."));
                 }
 
                 if (unmappedRangeCount > 0)
                 {
                     responseDiagnostics.Add(Diagnostic(
                         "unmapped_highlightings",
-                        $"Skipped {unmappedRangeCount} daemon highlighting(s) whose document range could not be mapped to an absolute physical path."));
+                        "Some findings were omitted because their source locations could not be mapped."));
                 }
 
                 var isPartial = invalidRangeCount > 0 || unreadableSeverityCount > 0 ||
@@ -493,7 +491,7 @@ namespace Bathur.ReSharperMcpToolset
                     virtualPath.ToString(),
                     Diagnostic(
                         "psi_source_not_registered",
-                        "Rider has no registered C++ PSI source file for the requested physical path in the current solution context."));
+                        "This file is not registered in Rider's C++ project model."));
             }
 
             return new SourceFileResolution(
@@ -536,7 +534,7 @@ namespace Bathur.ReSharperMcpToolset
             {
                 diagnostic = Diagnostic(
                     "position_not_mapped",
-                    "The requested source position could not be mapped to a Rider document offset.");
+                    "The source position could not be located in the current document.");
                 return false;
             }
 

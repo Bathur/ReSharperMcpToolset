@@ -14,8 +14,11 @@ The observations below identify the Rider and plugin revisions tested; coverage 
 | The same Rider build, plugin `0.3.4` | Forced compilation from the exported source, package/configuration checks, Plugin Verifier, and a focused runtime smoke test of the installed Release artifact | Static/package compatibility and the runtime scenarios listed below |
 | The same Rider build, plugin `0.3.5` | Static logging checks followed by an installed smoke test | Query behavior and log-file creation were observed; Windows active-file reading failed and the logging acceptance check did not pass |
 | The same Rider build, plugin `0.3.6` | Passing separate-process regression and static checks, followed by installed logging, toggle, and timeout-recovery checks | Active logs remain readable, unsuccessful calls are recorded as configured, and toggling logging takes effect without restarting in the tested scenarios |
+| The same Rider build, plugin `0.3.7` | Forced exported-source build, isolated consumer-diagnostic regression, and 13 installed calls covering all ten tools | The targeted symbol-inspection, outline, concise-diagnostic, and hierarchy behaviors described below; not a repeat of the full historical matrix |
 
 Version `0.3.5` adds a standalone JVM harness for logging and call observation, run with `build.ps1 failureLogTest`. It does not automate the C++ semantic matrices. Compilation, RD generation, project configuration checks, and Plugin Verifier are build/static checks. The semantic observations below came from deliberately selected runtime queries, GUI comparisons where relevant, and Rider log inspection.
+
+Version `0.3.7` also provides `build.ps1 consumerDiagnosticsTest`. It exercises selected production helpers with isolated objects from the locked Rider SDK, without connecting to a running IDE or replacing tests against live C++ PSI.
 
 ## Historical Rider 2026.1.5 coverage
 
@@ -134,6 +137,33 @@ The Lyra working tree remained clean; no source was edited or registered and no 
 The 44-file public source snapshot completed RD generation, C#/Kotlin compilation, the logging/observation harness, packaging, configuration checks, and Plugin Verifier with `--rerun-tasks --no-build-cache`. All 21 scheduled tasks executed. Downloaded dependencies were reused through the supported cache-root option; this was not an empty-cache or new-machine test.
 
 Plugin Verifier **1.410** reported **Compatible** against **`RD-262.9437.287`**, with **0 bytes** downloaded. The rebuilt plugin ZIP was byte-for-byte identical to the artifact used for the installed `0.3.6` logging checks above. The exporter also verified that generated files and all other public inputs still matched its manifest after the build. The subsequent documentation update did not change plugin binaries.
+
+## Version 0.3.7 fixes and installed checks
+
+The Release artifact completed C#/Kotlin compilation, the logging/observation harness, consumer-diagnostic regression, packaging, and configuration checks. Plugin Verifier **1.410** reported **Compatible** against **`RD-262.9437.287`**, with **0 bytes** downloaded. The RD model and generated sources were unchanged.
+
+The isolated checks cover concise asset/unsupported-reference messages, direct/indirect/unknown relation decisions, counting unavailable C++ and unknown hierarchy results, and visiting children of qualifier groups without counting the groups as missing declarations. They do not simulate every index state or exercise the entire query pipeline inside Rider.
+
+After installation and Rider restart, the loaded JAR and DLL matched the release artifact's entries by SHA-256. Thirteen calls covered all ten custom tools against the indexed Lyra-based project and Rider-known Engine source:
+
+- The `LyraCharacter.cpp` outline retained 54 physical declarations with `ok`, no skipped entries, and no query diagnostics. The earlier two skipped items were Rider qualifier groups, not physical declarations.
+- A normal header retained 37 outline entries. A page beginning at offset 20 matched the final 17 entries of the complete result, including a parent index from the preceding page.
+- `IsDeadOrDying` references retained one mapped C++ use and reported seven omitted Unreal asset reference results through one short diagnostic. The response remained `partial`; the count does not mean seven distinct assets.
+- Exact search for `IsExperienceLoaded` returned two candidates. Direct bases returned two types, and direct overridden-member lookup returned one base member.
+- Representative derived and overriding queries mapped 10 and 48 C++ results in the current index, with direct/indirect labels and no query diagnostics. These counts describe that project/index state, not a guarantee across revisions.
+- The two use-site inspections that had previously faulted resolved `FTimerManager::Tick` and `APlayerController::ConsoleCommand`, with declaration and definition locations.
+- Source diagnostics reproduced four warning findings at lines 9, 15, 171, and 213 of the tested file revision, with an empty query-diagnostics array.
+- The registration tool returned `already_registered`, `action_performed=none`, and `semantic_ready=true` for an existing project header; no project-model modification was performed.
+
+Twelve calls returned `ok` with `diagnostics: []`; the single expected `partial` call recorded only the concise asset-omission message in the active log. No internal investigation samples or tool exceptions appeared. The inspected frontend/backend window showed no plugin-attributed error, fatal condition, null-reference exception, or wrong-thread failure. Unrelated Rider asset-cache errors were present, so this does not establish an error-free IDE session.
+
+Unavailable/unknown hierarchy-result branches and the `unknown` relation fallback remain covered by isolated regression rather than deliberate corruption of the daily IDE's index. The original null-reference failure was state-dependent and did not reproduce in every pre-fix query; successful installed samples do not establish coverage of all cold or unresolved states. This check did not repeat fresh-file registration, deliberate timeout/cancellation, the full historical semantic matrices, or latency benchmarks. No source files were edited and no project build was launched.
+
+## Version 0.3.7 exported-source checks
+
+The 45-file public source snapshot completed RD generation, C#/Kotlin compilation, both regression harnesses, packaging, configuration checks, and Plugin Verifier with `--rerun-tasks --no-build-cache`. All 22 scheduled tasks executed. Existing downloaded dependencies were reused offline through the supported cache-root option; only the verified RD model JAR and local Rider configuration were added to the snapshot's ignored inputs.
+
+Plugin Verifier **1.410** reported **Compatible** against **`RD-262.9437.287`**, with **0 bytes** downloaded. The rebuilt plugin ZIP was byte-for-byte identical to the artifact used in the installed `0.3.7` checks above. Exporter verification confirmed that generated files and the other public inputs still matched the manifest after the build. Adding this validation record afterward did not change plugin binaries. This was not an empty-cache or new-machine test.
 
 ## Interpretation and limits
 

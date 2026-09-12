@@ -129,6 +129,16 @@ val compileDotNet by tasks.registering(Exec::class) {
     )
 }
 
+val consumerDiagnosticsTest by tasks.registering(Exec::class) {
+    dependsOn(compileDotNet)
+    workingDir(rootDir)
+    commandLine(
+        "pwsh", "-NoProfile", "-File", "tools/Test-ConsumerDiagnostics.ps1",
+        "-RiderHome", RiderHome,
+        "-BackendPath", "src/dotnet/$DotnetPluginId/bin/$DotnetPluginId.Rider/$BuildConfiguration/$DotnetAssemblyName.dll"
+    )
+}
+
 val publicationRoot = if (file("LICENSE").isFile) rootDir else file("release")
 val publicationDocuments = listOf("LICENSE", "LICENSING.md", "THIRD_PARTY_NOTICES.md")
 val publicationLicenseFiles = listOf("Apache-2.0.txt", "Gradle-Wrapper-NOTICE.txt")

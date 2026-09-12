@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.3.7
+
+- Fixes a null-reference failure in C++ symbol inspection when Rider's index returns an unresolved mapping.
+- Corrects file outlines that reported qualifier-group nodes as missing declarations. Members inside those groups remain in the outline; the grouping nodes do not increase `skipped_count` or cause a false `partial` response.
+- Keeps query diagnostics concise. Unreal asset references omitted from source results are summarized by count in one sentence, while the response remains `partial`. Other recovery and incompleteness messages are shortened without removing their meaning.
+- Corrects hierarchy-result completeness: recognized Unreal asset results remain outside the C++ hierarchy scope, while unavailable C++ results and unsupported shapes are reported as incomplete. Derived/overriding relationships that cannot be confirmed after an incomplete direct query are marked `unknown`.
+- Adds isolated regression checks for omission messages, hierarchy-result classification, relation certainty, and qualifier-group child traversal. Installed checks cover all ten tools through 13 selected calls; they do not repeat the full historical semantic or stress matrices.
+
+The ten tools, input parameters, RD model, and exact **Windows / Rider 2026.2.1 `RD-262.9437.287`** target remain unchanged. Optional unsuccessful-call logging remains disabled by default. See the [tool reference](docs/TOOLS.md) and [validation record](docs/VALIDATION.md) for details and coverage.
+
 ## 0.3.6
 
 - Adds optional local JSONL logging for non-`ok` responses and tool errors observed by the Kotlin frontend, including timeouts and final cancellations. Ordinary successful calls are not logged. Records support later review; an unsuccessful call is not automatically a plugin defect.

@@ -23,6 +23,8 @@ Nine tools query code without editing its contents. The tenth, `add_existing_fil
 
 Results include semantic identities and navigable physical file locations where available. Queries report ambiguity, incomplete mappings, unsupported cases, and indexing problems explicitly. They never silently substitute a text search for a semantic result.
 
+Query-level diagnostics focus on missing results and recovery information. They do not include internal investigation samples in regular responses. See the [release notes](RELEASE_NOTES.md) for version changes.
+
 For parameters, response fields, and troubleshooting details, see the [tool reference](docs/TOOLS.md).
 
 ## Requirements

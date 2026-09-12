@@ -113,14 +113,14 @@ internal class ExistingCppFileRegistration(private val project: Project) {
                 "not_indexed",
                 filePath,
                 "vfs_file_not_available",
-                "Rider VFS did not expose the existing physical file after a targeted refresh."
+                "Rider could not load the existing file; refresh the project and retry."
             )
         if (virtualFile.fileType !is CppFileType) {
             return preflightFailure(
                 "unsupported",
                 filePath,
                 "not_cpp_file_type",
-                "Rider does not classify the requested file as a C/C++ source or header file."
+                "Rider does not recognize this file as C/C++ source or header."
             )
         }
 
@@ -149,7 +149,7 @@ internal class ExistingCppFileRegistration(private val project: Project) {
                 "not_indexed",
                 filePath,
                 "parent_project_entity_not_registered",
-                "parent_directory is not registered as a Rider project or project-folder entity."
+                "parent_directory is not a registered project directory."
             )
         }
 
@@ -163,7 +163,7 @@ internal class ExistingCppFileRegistration(private val project: Project) {
                 "not_found",
                 filePath,
                 "project_name_not_found",
-                "No parent project entity exactly matches project_name '$projectName'.",
+                "No parent matches project_name; choose from parent_candidates.",
                 candidates = allCandidates,
             )
         }
@@ -179,9 +179,9 @@ internal class ExistingCppFileRegistration(private val project: Project) {
                 filePath,
                 code,
                 if (projectName == null) {
-                    "parent_directory maps to multiple Rider project entities; retry with an exact project_name."
+                    "parent_directory belongs to multiple projects; retry with an exact project_name."
                 } else {
-                    "project_name '$projectName' still maps to multiple parent entities; the first version will not choose an unstable item ID."
+                    "The selected parent remains ambiguous; choose a uniquely registered parent directory."
                 },
                 candidates = candidates,
             )
@@ -193,7 +193,7 @@ internal class ExistingCppFileRegistration(private val project: Project) {
                 "not_indexed",
                 filePath,
                 "project_model_not_ready",
-                "The selected parent project entity is not connected to the ReSharper backend project model.",
+                "The selected project is not ready; retry after project loading.",
                 parent = parent,
             )
 
@@ -262,7 +262,7 @@ internal class ExistingCppFileRegistration(private val project: Project) {
                 listOf(
                     RegistrationDiagnostic(
                         "missing_add_items_result",
-                        "Rider returned no per-item result for the single add-existing-item request."
+                        "Rider returned no registration result for the file."
                     )
                 ),
                 forcedStatus = "unsupported",
@@ -281,7 +281,7 @@ internal class ExistingCppFileRegistration(private val project: Project) {
                 listOf(
                     RegistrationDiagnostic(
                         "rider_project_model_rejected",
-                        "Rider's project model host rejected the file or an intermediate project folder."
+                        "Rider rejected the file or an intermediate project directory."
                     )
                 ),
                 forcedStatus = "unsupported",
@@ -450,26 +450,26 @@ internal class ExistingCppFileRegistration(private val project: Project) {
             diagnostics += RegistrationDiagnostic(
                 "project_item_not_presented_after_registration",
                 if (addItemResult?.itemId == null) {
-                    "Rider accepted the request but did not present a frontend project item before timeout_ms elapsed."
+                    "Registration was accepted, but the project item was not visible before the timeout."
                 } else {
-                    "The frontend Workspace Model did not present the project item before timeout_ms elapsed."
+                    "The registered project item was not visible before the timeout."
                 }
             )
         }
         if (!snapshot.cppPsiSourceRegistered) {
             diagnostics += RegistrationDiagnostic(
                 "cpp_psi_source_not_ready",
-                "The C++ PSI source file was not registered before timeout_ms elapsed."
+                "C++ source registration was not ready before the timeout."
             )
         } else if (!snapshot.primaryCppPsiAvailable) {
             diagnostics += RegistrationDiagnostic(
                 "primary_cpp_psi_not_ready",
-                "The primary C++ PSI file was not available before timeout_ms elapsed."
+                "C++ semantic data was not ready before the timeout."
             )
         } else if (!snapshot.providesCodeModel) {
             diagnostics += RegistrationDiagnostic(
                 "cpp_code_model_not_ready",
-                "The primary C++ PSI source did not provide a code model before timeout_ms elapsed."
+                "The C++ code model was not ready before the timeout."
             )
         }
         return diagnostics

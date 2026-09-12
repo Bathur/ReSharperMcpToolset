@@ -4,7 +4,7 @@
 <idea-plugin require-restart="true">
   <id>local.bathur.resharper.mcp.toolset</id>
   <name>ReSharper MCP Toolset</name>
-  <version>0.3.6</version>
+  <version>0.3.7</version>
   <vendor>Bathur</vendor>
   <resource-bundle>messages.ReSharperMcpToolsetBundle</resource-bundle>
   <idea-version since-build="262.9437.287" until-build="262.9437.287" />

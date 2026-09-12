@@ -19,6 +19,7 @@ using JetBrains.ReSharper.Feature.Services.Cpp.CodeStructure;
 using JetBrains.ReSharper.Feature.Services.Cpp.Navigation.Goto;
 using JetBrains.ReSharper.Feature.Services.Cpp.Occurrences;
 using JetBrains.ReSharper.Feature.Services.Cpp.UE4;
+using JetBrains.ReSharper.Feature.Services.Cpp.UE4.UEAsset.Search;
 using JetBrains.ReSharper.Feature.Services.Occurrences;
 using JetBrains.ReSharper.Feature.Services.Util;
 using JetBrains.ReSharper.Psi;
@@ -84,6 +85,8 @@ namespace Bathur.ReSharperMcpToolset
         private const string PrimaryCppPsiContext = "rider_primary_cpp_psi";
         private const string TooManyCodeStructureElementsType =
             "JetBrains.ReSharper.Feature.Services.Cpp.CodeStructure.CppTooManyElementsCodeStructureElement";
+        private const string CodeStructureQualifierElementType =
+            "JetBrains.ReSharper.Feature.Services.Cpp.CodeStructure.CppCodeStructureQualifierElement";
         private static int _nextReferencesOperationId;
 
         private readonly ISolution _solution;
@@ -209,6 +212,7 @@ namespace Bathur.ReSharperMcpToolset
                 stage = "resolve target";
                 var resolution = ResolveTarget(request.FilePath, request.Line, request.Column);
                 requestLifetime.ThrowIfNotAlive();
+                stage = "build inspected symbols";
                 var inspected = resolution.Elements
                     .Select(BuildInspectedSymbol)
                     .OrderBy(item => NavigationPath(item.Summary), StringComparer.OrdinalIgnoreCase)
@@ -234,7 +238,7 @@ namespace Bathur.ReSharperMcpToolset
                 {
                     diagnostics.Add(Diagnostic(
                         "unmapped_symbol",
-                        $"{skippedLocations} resolved symbol(s) had no physical declaration or definition that could be mapped."));
+                        $"{skippedLocations} resolved symbol(s) have no navigable declaration or definition."));
                 }
 
                 return new InspectSymbolResponse(
@@ -307,7 +311,7 @@ namespace Bathur.ReSharperMcpToolset
                     return SearchFailure(
                         "not_indexed",
                         "empty_cpp_index",
-                        "Rider's C++ global symbol cache is empty.",
+                        "The C++ symbol index is empty.",
                         request.Offset);
                 }
 
@@ -397,14 +401,14 @@ namespace Bathur.ReSharperMcpToolset
                 {
                     diagnostics.Add(Diagnostic(
                         "unmapped_symbols",
-                        $"Skipped {unmappedCount} indexed symbol(s) that had no physical Rider navigation location."));
+                        $"{unmappedCount} indexed symbol(s) have no navigable source location."));
                 }
 
                 if (unreadableCount > 0)
                 {
                     diagnostics.Add(Diagnostic(
                         "unreadable_indexed_symbols",
-                        $"Skipped {unreadableCount} indexed symbol wrapper(s) whose Rider metadata was incomplete or invalid."));
+                        $"{unreadableCount} indexed symbol(s) could not be read."));
                 }
 
                 var skippedCount = unmappedCount + unreadableCount;
@@ -481,7 +485,7 @@ namespace Bathur.ReSharperMcpToolset
                         "not_indexed",
                         sourceResolution.PhysicalPath,
                         "primary_psi_file_not_available",
-                        "Rider has no valid primary C++ PSI file for the requested source file in the current solution context.",
+                        "C++ semantic data is not available for this file yet.",
                         request.Offset);
                 }
 
@@ -523,21 +527,21 @@ namespace Bathur.ReSharperMcpToolset
                 {
                     diagnostics.Add(Diagnostic(
                         "unreadable_file_symbols",
-                        $"Skipped {unreadableCount} Rider file-structure declaration(s) whose C++ symbol metadata was incomplete or invalid."));
+                        $"{unreadableCount} file declaration(s) could not be read."));
                 }
 
                 if (unmappedCount > 0)
                 {
                     diagnostics.Add(Diagnostic(
                         "unmapped_file_symbols",
-                        $"Skipped {unmappedCount} Rider file-structure declaration(s) that had no exact physical identifier location in the requested file."));
+                        $"{unmappedCount} file declaration(s) have no exact source location."));
                 }
 
                 if (structureTruncated)
                 {
                     diagnostics.Add(Diagnostic(
                         "code_structure_truncated",
-                        "Rider reported that its C++ Code Structure result was truncated before the complete file outline was built."));
+                        "Rider truncated the file outline; some declarations are missing."));
                 }
 
                 return new ListSymbolsInFileResponse(
@@ -591,7 +595,11 @@ namespace Bathur.ReSharperMcpToolset
 
             var childParentIndex = parentOutlineIndex;
             var childParentDepth = parentDepth;
-            var declarationElement = element as ICodeStructureDeclarationElement;
+            // Rider's qualifier groups implement the declaration interface but have no declaration.
+            // Traverse their children with the existing parent; the group itself is not a lost symbol.
+            var declarationElement = string.Equals(element.GetType().FullName, CodeStructureQualifierElementType, StringComparison.Ordinal)
+                ? null
+                : element as ICodeStructureDeclarationElement;
             if (declarationElement != null)
             {
                 var cppElement = declarationElement.DeclaredElement as ICppDeclaredElement;
@@ -847,7 +855,8 @@ namespace Bathur.ReSharperMcpToolset
 
                 stage = "map reference results";
                 var unmappedCount = 0;
-                var unsupportedResultTypes = new Dictionary<string, int>(StringComparer.Ordinal);
+                var unrealAssetResultCount = 0;
+                var otherUnsupportedResultCount = 0;
                 var seenLocations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var mappedResults = new List<CppReferenceResult>(findResults.Count);
                 foreach (var findResult in findResults)
@@ -938,10 +947,10 @@ namespace Bathur.ReSharperMcpToolset
                     }
                     else
                     {
-                        var resultType = findResult.GetType().FullName ?? findResult.GetType().Name;
-                        int resultCount;
-                        unsupportedResultTypes.TryGetValue(resultType, out resultCount);
-                        unsupportedResultTypes[resultType] = resultCount + 1;
+                        if (findResult is UnrealAssetFindResult)
+                            unrealAssetResultCount++;
+                        else
+                            otherUnsupportedResultCount++;
                         continue;
                     }
 
@@ -973,32 +982,27 @@ namespace Bathur.ReSharperMcpToolset
                 var pageItems = ordered.Skip(request.Offset).Take(request.MaxResults).ToArray();
                 var hasMore = request.Offset + pageItems.Length < ordered.Length;
                 var diagnostics = new List<CppSemanticDiagnostic>(execution.Diagnostics);
-                var unsupportedResultCount = unsupportedResultTypes.Values.Sum();
+                var unsupportedResultCount = unrealAssetResultCount + otherUnsupportedResultCount;
                 var skippedCount = unmappedCount + unsupportedResultCount;
                 if (lostTargetCount > 0)
                 {
                     diagnostics.Add(Diagnostic(
                         "target_lost_after_search",
-                        $"Rider could not restore {lostTargetCount} target symbol(s) after the asynchronous reference search completed."));
+                        "The target became unavailable during the search; retry the query."));
                 }
 
                 if (unmappedCount > 0)
                 {
                     diagnostics.Add(Diagnostic(
                         "unmapped_references",
-                        $"Skipped {unmappedCount} non-physical or invalid semantic reference result(s)."));
+                        $"{unmappedCount} reference result(s) could not be mapped to source locations."));
                 }
 
                 if (unsupportedResultCount > 0)
                 {
-                    var resultTypeSummary = string.Join(
-                        ", ",
-                        unsupportedResultTypes
-                            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                            .Select(pair => $"{pair.Key}={pair.Value}"));
                     diagnostics.Add(Diagnostic(
                         "unsupported_reference_results",
-                        $"Skipped {unsupportedResultCount} Rider find result(s) with unsupported shapes: {resultTypeSummary}."));
+                        UnsupportedReferencesMessage(unrealAssetResultCount, otherUnsupportedResultCount)));
                 }
 
                 _logger.Info(
@@ -1034,6 +1038,15 @@ namespace Bathur.ReSharperMcpToolset
                     $"Rider C++ semantic reference search failed during {stage}.",
                     exception);
             }
+        }
+
+        private static string UnsupportedReferencesMessage(int assetCount, int otherCount)
+        {
+            if (otherCount == 0)
+                return $"{assetCount} Unreal asset reference(s) are not included in these source results.";
+            if (assetCount == 0)
+                return $"{otherCount} unsupported reference result(s) are not included.";
+            return $"{assetCount} Unreal asset reference(s) and {otherCount} unsupported reference result(s) are not included.";
         }
 
         private sealed class FinderCallback : IFinderAsyncCallback
@@ -1109,10 +1122,10 @@ namespace Bathur.ReSharperMcpToolset
 
                 stage = "find direct base types";
                 var progress = NullProgressIndicator.CreateCancellable(requestLifetime);
-                int ignoredNonCppOccurrences;
+                int unavailableOccurrences;
                 var baseElements = GetCppOccurrenceElements(
                     CppContextSearchUtil.FindBases(target, progress),
-                    out ignoredNonCppOccurrences);
+                    out unavailableOccurrences);
                 requestLifetime.ThrowIfNotAlive();
 
                 stage = "map direct base types";
@@ -1148,32 +1161,33 @@ namespace Bathur.ReSharperMcpToolset
                 var pageItems = ordered.Skip(request.Offset).Take(request.MaxResults).ToArray();
                 var hasMore = request.Offset + pageItems.Length < ordered.Length;
                 var diagnostics = new List<CppSemanticDiagnostic>(resolution.Diagnostics);
-                if (ignoredNonCppOccurrences > 0)
+                if (unavailableOccurrences > 0)
                 {
                     diagnostics.Add(Diagnostic(
-                        "non_cpp_occurrences_ignored",
-                        $"Ignored {ignoredNonCppOccurrences} non-C++ base occurrence(s) outside this tool's source-semantic scope."));
+                        "unavailable_hierarchy_results",
+                        $"{unavailableOccurrences} related result(s) could not be read."));
                 }
 
                 if (skippedCount > 0)
                 {
                     diagnostics.Add(Diagnostic(
                         "unmapped_base_types",
-                        $"Skipped {skippedCount} direct base type(s) without a physical Rider navigation location."));
+                        $"{skippedCount} direct base type(s) have no navigable source location."));
                 }
 
+                var totalSkippedCount = skippedCount + unavailableOccurrences;
                 return new BaseTypesResponse(
-                    skippedCount > 0 ? "partial" : "ok",
+                    totalSkippedCount > 0 ? "partial" : "ok",
                     targets,
                     pageItems,
                     new CppPageInfo(
                         request.Offset,
                         pageItems.Length,
                         ordered.Length,
-                        skippedCount == 0,
+                        totalSkippedCount == 0,
                         hasMore,
                         hasMore ? request.Offset + pageItems.Length : -1,
-                        skippedCount),
+                        totalSkippedCount),
                     SearchScope,
                     diagnostics.ToArray());
             }
@@ -1239,14 +1253,14 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 stage = "find direct derived types";
-                int ignoredDirectOccurrences;
+                int unavailableDirectOccurrences;
                 var directElements = GetCppOccurrenceElements(
                     CppContextSearchUtil.FindInheritors(
                         target,
                         recursive: false,
                         onlyImplementations: false,
                         NullProgressIndicator.CreateCancellable(requestLifetime)),
-                    out ignoredDirectOccurrences);
+                    out unavailableDirectOccurrences);
                 requestLifetime.ThrowIfNotAlive();
                 var directKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var directElement in directElements)
@@ -1256,14 +1270,14 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 stage = "find all derived types";
-                int ignoredRecursiveOccurrences;
+                int unavailableRecursiveOccurrences;
                 var recursiveElements = GetCppOccurrenceElements(
                     CppContextSearchUtil.FindInheritors(
                         target,
                         recursive: true,
                         onlyImplementations: false,
                         NullProgressIndicator.CreateCancellable(requestLifetime)),
-                    out ignoredRecursiveOccurrences);
+                    out unavailableRecursiveOccurrences);
                 requestLifetime.ThrowIfNotAlive();
 
                 stage = "map derived types";
@@ -1281,7 +1295,7 @@ namespace Bathur.ReSharperMcpToolset
 
                     mapped.Add(new CppRelatedSymbolResult(
                         summary,
-                        directKeys.Contains(SemanticIdentityKey(summary)) ? "direct" : "indirect"));
+                        RelatedSymbolRelation(directKeys.Contains(SemanticIdentityKey(summary)), unavailableDirectOccurrences == 0)));
                 }
 
                 var ordered = mapped
@@ -1296,33 +1310,40 @@ namespace Bathur.ReSharperMcpToolset
                 var pageItems = ordered.Skip(request.Offset).Take(request.MaxResults).ToArray();
                 var hasMore = request.Offset + pageItems.Length < ordered.Length;
                 var diagnostics = new List<CppSemanticDiagnostic>(resolution.Diagnostics);
-                var ignoredNonCppOccurrences = ignoredDirectOccurrences + ignoredRecursiveOccurrences;
-                if (ignoredNonCppOccurrences > 0)
+                if (unavailableDirectOccurrences > 0)
                 {
                     diagnostics.Add(Diagnostic(
-                        "non_cpp_occurrences_ignored",
-                        $"Ignored {ignoredNonCppOccurrences} non-C++ inheritor occurrence(s), including any UE asset results outside this tool's source-semantic scope."));
+                        "incomplete_direct_relations",
+                        "Some direct relationships could not be verified; unconfirmed relations are marked unknown."));
+                }
+
+                if (unavailableRecursiveOccurrences > 0)
+                {
+                    diagnostics.Add(Diagnostic(
+                        "unavailable_hierarchy_results",
+                        $"{unavailableRecursiveOccurrences} related result(s) could not be read."));
                 }
 
                 if (skippedCount > 0)
                 {
                     diagnostics.Add(Diagnostic(
                         "unmapped_derived_types",
-                        $"Skipped {skippedCount} derived type(s) without a physical Rider navigation location."));
+                        $"{skippedCount} derived type(s) have no navigable source location."));
                 }
 
+                var totalSkippedCount = skippedCount + unavailableRecursiveOccurrences;
                 return new RelatedSymbolsResponse(
-                    skippedCount > 0 ? "partial" : "ok",
+                    totalSkippedCount > 0 || unavailableDirectOccurrences > 0 ? "partial" : "ok",
                     targets,
                     pageItems,
                     new CppPageInfo(
                         request.Offset,
                         pageItems.Length,
                         ordered.Length,
-                        skippedCount == 0,
+                        totalSkippedCount == 0,
                         hasMore,
                         hasMore ? request.Offset + pageItems.Length : -1,
-                        skippedCount),
+                        totalSkippedCount),
                     SearchScope,
                     diagnostics.ToArray());
             }
@@ -1390,12 +1411,12 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 stage = "find direct overridden members";
-                int ignoredNonCppOccurrences;
+                int unavailableOccurrences;
                 var baseElements = GetCppOccurrenceElements(
                     CppContextSearchUtil.FindBases(
                         target,
                         NullProgressIndicator.CreateCancellable(requestLifetime)),
-                    out ignoredNonCppOccurrences);
+                    out unavailableOccurrences);
                 requestLifetime.ThrowIfNotAlive();
 
                 stage = "map direct overridden members";
@@ -1426,32 +1447,33 @@ namespace Bathur.ReSharperMcpToolset
                 var pageItems = ordered.Skip(request.Offset).Take(request.MaxResults).ToArray();
                 var hasMore = request.Offset + pageItems.Length < ordered.Length;
                 var diagnostics = new List<CppSemanticDiagnostic>(resolution.Diagnostics);
-                if (ignoredNonCppOccurrences > 0)
+                if (unavailableOccurrences > 0)
                 {
                     diagnostics.Add(Diagnostic(
-                        "non_cpp_occurrences_ignored",
-                        $"Ignored {ignoredNonCppOccurrences} non-C++ base member occurrence(s) outside this tool's source-semantic scope."));
+                        "unavailable_hierarchy_results",
+                        $"{unavailableOccurrences} related result(s) could not be read."));
                 }
 
                 if (skippedCount > 0)
                 {
                     diagnostics.Add(Diagnostic(
                         "unmapped_overridden_members",
-                        $"Skipped {skippedCount} overridden member(s) without a physical Rider navigation location."));
+                        $"{skippedCount} overridden member(s) have no navigable source location."));
                 }
 
+                var totalSkippedCount = skippedCount + unavailableOccurrences;
                 return new RelatedSymbolsResponse(
-                    skippedCount > 0 ? "partial" : "ok",
+                    totalSkippedCount > 0 ? "partial" : "ok",
                     targets,
                     pageItems,
                     new CppPageInfo(
                         request.Offset,
                         pageItems.Length,
                         ordered.Length,
-                        skippedCount == 0,
+                        totalSkippedCount == 0,
                         hasMore,
                         hasMore ? request.Offset + pageItems.Length : -1,
-                        skippedCount),
+                        totalSkippedCount),
                     SearchScope,
                     diagnostics.ToArray());
             }
@@ -1530,19 +1552,19 @@ namespace Bathur.ReSharperMcpToolset
                         {
                             Diagnostic(
                                 "target_cannot_have_implementations",
-                                "Rider does not classify this C++ member as capable of having overriding implementations.")
+                                "The selected member does not support an overriding-member query.")
                         });
                 }
 
                 stage = "find direct overriding members";
-                int ignoredDirectOccurrences;
+                int unavailableDirectOccurrences;
                 var directElements = GetCppOccurrenceElements(
                     CppContextSearchUtil.FindInheritors(
                         target,
                         recursive: false,
                         onlyImplementations: true,
                         NullProgressIndicator.CreateCancellable(requestLifetime)),
-                    out ignoredDirectOccurrences);
+                    out unavailableDirectOccurrences);
                 requestLifetime.ThrowIfNotAlive();
                 var directKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var directElement in directElements)
@@ -1552,14 +1574,14 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 stage = "find all overriding members";
-                int ignoredRecursiveOccurrences;
+                int unavailableRecursiveOccurrences;
                 var recursiveElements = GetCppOccurrenceElements(
                     CppContextSearchUtil.FindInheritors(
                         target,
                         recursive: true,
                         onlyImplementations: true,
                         NullProgressIndicator.CreateCancellable(requestLifetime)),
-                    out ignoredRecursiveOccurrences);
+                    out unavailableRecursiveOccurrences);
                 requestLifetime.ThrowIfNotAlive();
 
                 stage = "map overriding members";
@@ -1577,7 +1599,7 @@ namespace Bathur.ReSharperMcpToolset
 
                     mapped.Add(new CppRelatedSymbolResult(
                         summary,
-                        directKeys.Contains(SemanticIdentityKey(summary)) ? "direct" : "indirect"));
+                        RelatedSymbolRelation(directKeys.Contains(SemanticIdentityKey(summary)), unavailableDirectOccurrences == 0)));
                 }
 
                 var ordered = mapped
@@ -1592,33 +1614,40 @@ namespace Bathur.ReSharperMcpToolset
                 var pageItems = ordered.Skip(request.Offset).Take(request.MaxResults).ToArray();
                 var hasMore = request.Offset + pageItems.Length < ordered.Length;
                 var diagnostics = new List<CppSemanticDiagnostic>(resolution.Diagnostics);
-                var ignoredNonCppOccurrences = ignoredDirectOccurrences + ignoredRecursiveOccurrences;
-                if (ignoredNonCppOccurrences > 0)
+                if (unavailableDirectOccurrences > 0)
                 {
                     diagnostics.Add(Diagnostic(
-                        "non_cpp_occurrences_ignored",
-                        $"Ignored {ignoredNonCppOccurrences} non-C++ implementation occurrence(s), including any UE asset results outside this tool's source-semantic scope."));
+                        "incomplete_direct_relations",
+                        "Some direct relationships could not be verified; unconfirmed relations are marked unknown."));
+                }
+
+                if (unavailableRecursiveOccurrences > 0)
+                {
+                    diagnostics.Add(Diagnostic(
+                        "unavailable_hierarchy_results",
+                        $"{unavailableRecursiveOccurrences} related result(s) could not be read."));
                 }
 
                 if (skippedCount > 0)
                 {
                     diagnostics.Add(Diagnostic(
                         "unmapped_overriding_members",
-                        $"Skipped {skippedCount} overriding member(s) without a physical Rider navigation location."));
+                        $"{skippedCount} overriding member(s) have no navigable source location."));
                 }
 
+                var totalSkippedCount = skippedCount + unavailableRecursiveOccurrences;
                 return new RelatedSymbolsResponse(
-                    skippedCount > 0 ? "partial" : "ok",
+                    totalSkippedCount > 0 || unavailableDirectOccurrences > 0 ? "partial" : "ok",
                     targets,
                     pageItems,
                     new CppPageInfo(
                         request.Offset,
                         pageItems.Length,
                         ordered.Length,
-                        skippedCount == 0,
+                        totalSkippedCount == 0,
                         hasMore,
                         hasMore ? request.Offset + pageItems.Length : -1,
-                        skippedCount),
+                        totalSkippedCount),
                     SearchScope,
                     diagnostics.ToArray());
             }
@@ -1657,7 +1686,7 @@ namespace Bathur.ReSharperMcpToolset
                     virtualPath.ToString(),
                     Diagnostic(
                         "psi_source_not_registered",
-                        "Rider has no registered C++ PSI source file for the requested physical path in the current solution context."));
+                        "This file is not registered in Rider's C++ project model."));
             }
 
             return new SourceFileResolution(
@@ -1716,7 +1745,7 @@ namespace Bathur.ReSharperMcpToolset
                     "not_found",
                     Diagnostic(
                         "position_not_mapped",
-                        "The requested source position could not be mapped to a Rider document offset."));
+                        "The source position could not be located in the current document."));
             }
 
             bool hasPsiFilesWithOffset;
@@ -1736,7 +1765,7 @@ namespace Bathur.ReSharperMcpToolset
                     "not_indexed",
                     Diagnostic(
                         "psi_not_available",
-                        "Rider has no PSI file at the requested source position. The file may not be indexed in the current solution context."));
+                        "C++ semantic data is not available at this position yet."));
             }
 
             if (declaredElements.Length == 0)
@@ -1745,7 +1774,7 @@ namespace Bathur.ReSharperMcpToolset
                     "not_found",
                     Diagnostic(
                         "symbol_not_found",
-                        "Rider PSI found the source position but did not resolve it to a declared C++ symbol. Move the column onto the identifier token."));
+                        "No C++ symbol resolved here; place the position on its identifier."));
             }
 
             if (declaredElements.Length > 1)
@@ -1757,7 +1786,7 @@ namespace Bathur.ReSharperMcpToolset
                     {
                         Diagnostic(
                             "ambiguous_target",
-                            $"The position resolved to {declaredElements.Length} distinct C++ symbols. Use a returned navigation position to retry.")
+                            $"{declaredElements.Length} C++ targets match; retry at a candidate's navigation position.")
                     });
             }
 
@@ -1782,7 +1811,9 @@ namespace Bathur.ReSharperMcpToolset
                 .Values
                 .Distinct()
                 .ToArray();
-            if (linkageEntities.Length != 1)
+            // Rider retains unresolved parser symbols as null dictionary values.
+            // Do not wrap null or discard unresolved candidates to manufacture uniqueness.
+            if (linkageEntities.Length != 1 || linkageEntities[0] == null)
             {
                 return element;
             }
@@ -2082,17 +2113,23 @@ namespace Bathur.ReSharperMcpToolset
 
         private static ICppDeclaredElement[] GetCppOccurrenceElements(
             IEnumerable<IOccurrence> occurrences,
-            out int ignoredNonCppOccurrences)
+            out int unavailableOccurrences)
         {
-            ignoredNonCppOccurrences = 0;
+            unavailableOccurrences = 0;
             var elements = new List<ICppDeclaredElement>();
             foreach (var occurrence in occurrences)
             {
+                // Rider explicitly returns this asset shape alongside C++ inheritors.
+                // It is outside the hierarchy tools' C++ source contract.
+                if (occurrence is UnrealAssetOccurence)
+                    continue;
+
                 var cppOccurrence = occurrence as CppDeclaredElementOccurrence;
-                var element = cppOccurrence?.OccurrenceElement.GetValidDeclaredElement() as ICppDeclaredElement;
+                var element = cppOccurrence?.OccurrenceElement?.GetValidDeclaredElement() as ICppDeclaredElement;
                 if (element == null || !element.IsValid())
                 {
-                    ignoredNonCppOccurrences++;
+                    // Unknown shapes and unavailable C++ elements are incomplete results, not scope exclusions.
+                    unavailableOccurrences++;
                     continue;
                 }
 
@@ -2100,6 +2137,11 @@ namespace Bathur.ReSharperMcpToolset
             }
 
             return elements.Distinct().ToArray();
+        }
+
+        private static string RelatedSymbolRelation(bool isDirect, bool directQueryComplete)
+        {
+            return isDirect ? "direct" : directQueryComplete ? "indirect" : "unknown";
         }
 
         private static bool TryValidatePaging(

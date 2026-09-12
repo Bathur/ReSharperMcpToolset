@@ -73,6 +73,8 @@ Normal structured responses use these statuses; not every status applies to ever
 
 `diagnostics[]` contains query-level `code` and `message` entries. These are distinct from code issues in `get_diagnostics.findings[]`. Invalid arguments, timeouts, and unhandled backend failures are reported as tool errors, rather than successful responses with one of the statuses above.
 
+Query diagnostics provide concise incompleteness or recovery information. Complete results normally have an empty array; internal investigation samples are not part of regular responses.
+
 Optional [unsuccessful call logs](../README.md#unsuccessful-call-logs) can retain non-`ok` responses and tool errors for later review. Recording a status does not classify it as a plugin defect or change its meaning above.
 
 An empty search result does not by itself prove that a symbol does not exist or that a file needs registration. Check the spelling, loaded project, index state, and the returned diagnostics first.
@@ -127,6 +129,8 @@ Required arguments: `file_path`, `line`, `column`. Optional: `offset`, `max_resu
 
 References are to the exact semantic target. They do not automatically include references to base or overriding members, and they are not a caller/callee graph. Resolve ambiguity first, then combine references with inspection and source reading to understand how the symbol is used.
 
+If Rider also finds Unreal asset references, the source response remains `partial` and reports the omitted asset-reference count in one diagnostic sentence. Those asset references are not returned as source locations, and the count is not a count of distinct assets.
+
 ## Explore C++ inheritance and overrides
 
 All four tools require `file_path`, `line`, and `column`, and accept optional `offset`, `max_results`, and `timeout_ms`. Use the exact type or member identifier appropriate to the query. Responses identify the resolved target in `targets[]`.
@@ -140,7 +144,9 @@ All four tools require `file_path`, `line`, and `column`, and accept optional `o
 
 For an upward walk, repeat a direct-base or direct-overridden query at a returned symbol's navigation. Use inspection to move between declarations and definitions.
 
-Derived and overriding results are flat collections. Their `relation` describes direct or indirect relationships established by Rider's hierarchy queries; ordering does not encode ancestry paths or depth. These tools do not enumerate Blueprint inheritance or implementations. Direct-base semantic flags are strings that may be `"unknown"`, rather than guaranteed JSON booleans.
+Derived and overriding results are flat collections. Their `relation` is `direct` or `indirect` when established by Rider's hierarchy queries. If the direct query is incomplete, unconfirmed relationships are `unknown` and the response is `partial`; confirmed direct relationships remain `direct`. Ordering does not encode ancestry paths or depth. These tools exclude Rider's recognized Unreal asset hierarchy results. Unavailable C++ results or unsupported result shapes are reported as incomplete. Direct-base semantic flags are strings that may be `"unknown"`, rather than guaranteed JSON booleans.
+
+For derived/overriding queries, `page.skipped_count` accounts for unavailable or unmappable results in the recursive result set. Direct-query failures affect relationship certainty separately, so a response can be `partial` with `skipped_count: 0` and a reliable mapped count.
 
 ## List symbols in a file
 
@@ -150,7 +156,7 @@ Required argument: `file_path`. Optional: `offset`, `max_results`, `timeout_ms`.
 
 `symbols[]` is a source-ordered outline of physical declaration and definition occurrences in one primary C++ PSI context. Each occurrence has a `location`, identity fields, `declaration_role`, `outline_index`, `parent_outline_index`, and `depth`. Parent indexes refer to the full outline, so a parent may be on an earlier page. Pass an occurrence's location to inspection for canonical identity and the full declaration/definition set.
 
-The outline excludes locals, parameters, preprocessor directives, macro definitions, include expansions, and synthetic declarations introduced by macro substitution. A valid indexed file with no declarations covered by the outline can return `ok` with an empty list. Unreadable, unmappable, or truncated structure is reported as `partial` with diagnostics.
+The outline excludes locals, parameters, preprocessor directives, macro definitions, include expansions, and synthetic declarations introduced by macro substitution. Rider qualifier-group nodes are traversed without being counted as declarations or skipped results. A valid indexed file with no declarations covered by the outline can return `ok` with an empty list. Unreadable, unmappable, or truncated structure is reported as `partial` with diagnostics.
 
 ```json
 {
