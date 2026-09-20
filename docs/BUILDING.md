@@ -6,8 +6,8 @@ This plugin exposes ReSharper C++ services through Rider's built-in MCP server. 
 
 - Windows. The build entry point currently selects Rider's `jbr/bin/java.exe` and uses Windows paths for the backend. Other operating systems have not been validated.
 - PowerShell 7, available as `pwsh`.
-- An installed JetBrains Rider **2026.2.1**, build **`RD-262.9437.287`**. The build checks the installation's `build.txt` and rejects a different build.
-- The JBR/JDK supplied with that Rider installation. The verified installation uses JBR **25.0.3**; Java and Kotlin compilation target Java **25**.
+- An installed JetBrains Rider **2026.2.2**, build **`RD-262.10315.191`**. The build checks the installation's `build.txt` and rejects a different build.
+- The JBR/JDK supplied with that Rider installation. The verified installation uses JBR **25.0.4+1-b508.27**; Java and Kotlin compilation target Java **25**.
 - A .NET SDK capable of building the SDK-style `net472` backend, with .NET Framework 4.7.2 reference assemblies available to MSBuild. The SDK is not pinned with `global.json`; no minimum SDK version has been established.
 - Network access for the initial Gradle, Maven, NuGet, RD model, and Plugin Verifier dependencies. Later runs can reuse local caches; a fully offline first build is not supported.
 
@@ -31,7 +31,7 @@ These are the recorded versions for the existing build. Do not infer compatibili
 Prepare these tools before running the build:
 
 1. Install [PowerShell 7 for Windows](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows) so `pwsh` is available.
-2. Install Rider **2026.2.1**, build **`RD-262.9437.287`**, from JetBrains' [other Rider versions](https://www.jetbrains.com/rider/download/other/). That installation supplies the JBR/JDK and ReSharperHost assemblies used by this build.
+2. Install Rider **2026.2.2**, build **`RD-262.10315.191`**, from JetBrains' [other Rider versions](https://www.jetbrains.com/rider/download/other/). That installation supplies the JBR/JDK and ReSharperHost assemblies used by this build.
 3. Install the [.NET SDK for Windows](https://learn.microsoft.com/en-us/dotnet/core/install/windows), rather than only a .NET runtime, so the `dotnet` command and MSBuild are available.
 
 A matching installed .NET Framework 4.7.2 targeting pack supplies the reference assemblies when available. For an SDK-style project such as this one, the .NET SDK can instead restore `Microsoft.NETFramework.ReferenceAssemblies` implicitly through NuGet when those assemblies are missing. This does not require a Visual Studio installation. See Microsoft's [reference assemblies guidance](https://learn.microsoft.com/en-us/dotnet/framework/migration-guide/reference-assemblies). The project does not establish a minimum SDK version for this behavior.
@@ -77,18 +77,18 @@ The verified local Rider installation does not include the `rider-model.jar` req
 
 ```powershell
 pwsh -NoProfile -File .\tools\Get-RemoteZipEntry.ps1 `
-  -Uri "https://d2cico3c979uwg.cloudfront.net/com/jetbrains/intellij/rider/riderRD/2026.2.1/riderRD-2026.2.1.zip" `
+  -Uri "https://d2cico3c979uwg.cloudfront.net/com/jetbrains/intellij/rider/riderRD/2026.2.2/riderRD-2026.2.2.zip" `
   -EntryName "lib/rd/rider-model.jar" `
   -OutputPath ".sdk/rider-model.jar" `
-  -CentralDirectoryCachePath ".sdk/riderRD-2026.2.1-central.bin"
+  -CentralDirectoryCachePath ".sdk/riderRD-2026.2.2-central.bin"
 ```
 
 The helper validates the extracted size against the ZIP entry and prints a hash. Before generation, also check the exact known input size and SHA-256:
 
 ```powershell
 $riderModelPath = Join-Path (Get-Location) ".sdk/rider-model.jar"
-$expectedModelSize = 3239836
-$expectedModelHash = "638C6B1CC4E74AD245F0572B946BEFA518ECA3A67DAAF09CEAA32B5F7654ADE8"
+$expectedModelSize = 3240366
+$expectedModelHash = "EB1695922C0E7FA8B73BA1ADFF5DA987D2DEF15CA14846F57FA266E8F2033AA7"
 
 if ((Get-Item -LiteralPath $riderModelPath).Length -ne $expectedModelSize) {
     throw "The Rider model size does not match the recorded build input."

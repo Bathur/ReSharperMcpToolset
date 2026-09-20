@@ -29,7 +29,7 @@ For parameters, response fields, and troubleshooting details, see the [tool refe
 
 ## Requirements
 
-- **Windows and JetBrains Rider 2026.2.1, build `RD-262.9437.287`.** This is the only current build and runtime target. Other Rider builds and operating systems have not been qualified for this release.
+- **Windows and JetBrains Rider 2026.2.2, build `RD-262.10315.191`.** This is the only current build and runtime target. Other Rider builds and operating systems have not been qualified for this release.
 - Rider's C++ support and bundled MCP Server plugin enabled.
 - A project or solution loaded in Rider, with the relevant C++ files registered and indexed. Engine and library queries require those sources to be known to Rider.
 - An MCP client connected to Rider. Runtime validation has used Codex; other clients have not been independently validated by this project.

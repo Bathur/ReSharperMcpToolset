@@ -6,15 +6,20 @@ The observations below identify the Rider and plugin revisions tested; coverage 
 
 ## Evidence by version
 
+Versions `0.3.8` and `0.3.9` were local development revisions, not public releases. Their evidence is retained to distinguish intermediate results from the installed `0.3.10` acceptance checks. The public `0.3.10` release incorporates the Rider 2026.2.2 compatibility update and the search and upstream-override fixes since `0.3.7`.
+
 | Target and revision | Observed coverage | What it establishes |
 | --- | --- | --- |
 | Rider 2026.1.5, earlier development baseline | Broad C++/Unreal semantic, diagnostics, cancellation, and existing-file registration matrices in a sandbox | Historical behavior for comparison; not support for that Rider version in the current source |
-| Rider 2026.2.1 `RD-262.9437.287`, plugin `0.3.2` | Static checks and a focused runtime regression in the daily Rider installation, including a cold file outline and log inspection | The current underlying semantic and execution-model baseline on the locked target |
+| Rider 2026.2.1 `RD-262.9437.287`, plugin `0.3.2` | Static checks and a focused runtime regression in the daily Rider installation, including a cold file outline and log inspection | A historical semantic and execution-model baseline for comparison with later targets |
 | The same Rider build, plugin `0.3.3` | Static checks, installed-version confirmation, and a read-only symbol-position contract matrix | The clarified symbol inspection description matches the observed declaration, definition, and use-site behavior |
 | The same Rider build, plugin `0.3.4` | Forced compilation from the exported source, package/configuration checks, Plugin Verifier, and a focused runtime smoke test of the installed Release artifact | Static/package compatibility and the runtime scenarios listed below |
 | The same Rider build, plugin `0.3.5` | Static logging checks followed by an installed smoke test | Query behavior and log-file creation were observed; Windows active-file reading failed and the logging acceptance check did not pass |
 | The same Rider build, plugin `0.3.6` | Passing separate-process regression and static checks, followed by installed logging, toggle, and timeout-recovery checks | Active logs remain readable, unsuccessful calls are recorded as configured, and toggling logging takes effect without restarting in the tested scenarios |
 | The same Rider build, plugin `0.3.7` | Forced exported-source build, isolated consumer-diagnostic regression, and 13 installed calls covering all ten tools | The targeted symbol-inspection, outline, concise-diagnostic, and hierarchy behaviors described below; not a repeat of the full historical matrix |
+| Rider 2026.2.2 `RD-262.10315.191`, plugin `0.3.8` | Static checks, both isolated regression harnesses, Plugin Verifier, installed binary binding, and 14 read-only calls across eight tools | Static and representative runtime compatibility; two previously observed result-completeness problems still reproduce |
+| The same Rider build, plugin `0.3.9` | Static checks, installed binary binding, and 20 calls across six tools | Upstream recovery and normal controls passed; search acceptance failed on lexical parser identities |
+| The same Rider build, plugin `0.3.10` | Static checks, installed binary binding, and 20 selected calls across six tools | The targeted search identity, filtering, paging/navigation and upstream cases passed; not the full historical matrix |
 
 Version `0.3.5` adds a standalone JVM harness for logging and call observation, run with `build.ps1 failureLogTest`. It does not automate the C++ semantic matrices. Compilation, RD generation, project configuration checks, and Plugin Verifier are build/static checks. The semantic observations below came from deliberately selected runtime queries, GUI comparisons where relevant, and Rider log inspection.
 
@@ -165,9 +170,63 @@ The 45-file public source snapshot completed RD generation, C#/Kotlin compilatio
 
 Plugin Verifier **1.410** reported **Compatible** against **`RD-262.9437.287`**, with **0 bytes** downloaded. The rebuilt plugin ZIP was byte-for-byte identical to the artifact used in the installed `0.3.7` checks above. Exporter verification confirmed that generated files and the other public inputs still matched the manifest after the build. Adding this validation record afterward did not change plugin binaries. This was not an empty-cache or new-machine test.
 
+## Version 0.3.8 Rider 2026.2.2 compatibility checks
+
+The source now targets Windows / Rider 2026.2.2, build **`RD-262.10315.191`**. The matching Rider model was used with the existing RD generator; both generated protocol files remained unchanged. C# and Kotlin compilation succeeded against the new installation without changes to the semantic backend or tool implementation. Java/Kotlin still target Java 25, using the installation's JBR 25.0.4; the remaining build-tool versions were retained.
+
+The logging/observation harness, consumer-diagnostic regression, packaging, and configuration checks passed. Plugin Verifier **1.410** reported **Compatible**, using the local Rider installation and downloading **423.27 MB** of plugins and dependencies. The known exact-build configuration suggestion and missing optional IDE classpath warnings remain. An initial sandbox permission failure and an offline miss for the new compiler helper were resolved through the existing build entry point; they were not API compilation failures.
+
+Package inspection confirmed plugin version `0.3.8`, identical minimum/maximum build bounds of `262.10315.191`, Java 25 bytecode, backend assembly version `0.3.8.0`, and the required license/source notices. No backend PDB, Rider host assemblies, or test classes were included.
+
+## Version 0.3.8 installed runtime checks
+
+After the user installed the candidate, restarted Rider and the MCP client, and reported indexing complete, the installed DLL/JAR hashes matched the verified package. Frontend and backend logs confirmed plugin `0.3.8` and Rider `RD-262.10315.191`; the previous unreachable MCP connection was restored.
+
+Fourteen read-only calls covered eight tools: ten returned `ok` and four returned `partial`. Ordinary checks retained two `IsExperienceLoaded` candidates, the selected member's declaration/definition identity, nine references, 37 header-outline occurrences, two direct base types, the normal `EndPlay` upstream member, and the four existing source warnings at lines 9, 15, 171, and 213. Successful responses had empty query diagnostics.
+
+The two previously observed completeness problems still reproduced. Searches for `ULyraHealthSet` and class-filtered `UAbilityTask` each reported one unreadable indexed item. Direct upstream queries from both the definition and declaration of `ULyraDamageExecution::Execute_Implementation` returned no mapped member and one skipped member. In contrast, inspecting the physical base definition succeeded, and a downstream query from that identity returned both Damage and Heal implementations as direct overrides. This narrows the investigation to the upstream result path but does not establish the root cause or constitute a fix.
+
+The four partial calls each produced exactly one failure-log record, with no additional tool errors, timeouts, or cancellations. No plugin-attributed loading/API errors or wrong-thread failures appeared in the inspected frontend/backend/protocol window. A roughly 0.765-second generic `RdDispatcher::FlushAll` watchdog overlapped the successful diagnostics call; available evidence did not establish plugin causation. Existing asset-cache and toolbar errors occurred before the call window and were not attributed to these queries.
+
+This was a representative compatibility check, not the full historical semantic or performance matrix. It did not repeat derived-type lookup, registration, deliberate timeout/cancellation, complete pagination, or GUI comparison. No source files were edited or registered, and no target-project build was launched. The compatibility change did not fix the two result-completeness issues; earlier installed results remain attributed to Rider 2026.2.1.
+
+## Version 0.3.9 semantic-identity fix checks
+
+The backend compiled against the same locked Rider installation. Packaging, configuration checks, the existing consumer-diagnostic and logging/observation harnesses passed. Plugin Verifier **1.410** reported **Compatible**, with **0 bytes** downloaded. RD model and generated files were unchanged; the Kotlin tool implementation, tool schemas, timeout and execution models were retained.
+
+Code review checked preservation of original index keys, semantic entity/parser deduplication, parser metadata, and the distinction between skipped results and returned but unmerged source occurrences. Such occurrences retain `partial` and do not claim a known complete total. The upstream recovery uses Rider's resolve/linkage identity and existing source mapping, with no name or text matching. Temporary sampling and its test fixtures were removed; package inspection confirmed that the temporary helper type is absent and that the plugin/backend versions are `0.3.9`/`0.3.9.0`.
+
+The user then installed 0.3.9 and restarted Rider/the MCP client. Installed hashes matched the package. Twenty calls across six tools returned 15 `ok` and five search `partial` responses. Upstream queries from both the Damage declaration and definition returned the correct Engine base implementation with one direct result and no omissions; reverse overrides, ordinary symbol inspection, nine references, a 37-item outline, and the normal EndPlay upstream result remained correct.
+
+Search acceptance failed. The raw-parser fallback returned elaborated type uses with lexical containing-class names such as `ALyraCharacterWithAbilities::ULyraHealthSet`, although inspection at all six recovered use positions resolved to the proper global types. A search for the false qualified name also returned that lexical candidate. Two small pages matched the full four-item Health search, but paging consistency and the partial warning did not make the incorrect identity acceptable. Five failure-log records matched the search calls, with no new plugin errors or temporary probes in the call window.
+
+## Version 0.3.10 search position-recovery checks
+
+The follow-up uses the indexed occurrence's existing physical identifier position with the same unique-target PSI resolver as inspection. Only a valid, non-null canonical linkage target reaches name/kind filtering and output. Unmapped, ambiguous, unreadable, or non-canonical occurrences remain explicitly skipped/partial; raw lexical parser metadata is no longer returned as target identity. The upstream fix is unchanged.
+
+Compilation, packaging, configuration checks and both existing regression harnesses passed. Plugin Verifier **1.410** reported **Compatible** against the same locked Rider build, downloading **0 bytes**. Package inspection confirmed versions 0.3.10/0.3.10.0 and the absence of temporary probe, host assemblies, PDB and test classes. RD and Kotlin tool sources remained unchanged.
+
+## Version 0.3.10 installed acceptance
+
+After installation and Rider/client restart, the installed DLL/JAR hashes matched the verified package and frontend/backend logs confirmed 0.3.10. Twenty read-only calls across six tools returned 17 `ok` and three expected `not_found` responses, with no partial responses, skipped results, or query diagnostics.
+
+Unfiltered searches for `ULyraHealthSet` and `UAbilityTask` each returned exactly the constructor and global class; class filtering returned one result each, with correct totals. The three previously false nested qualified names returned no results. Two one-item Health pages matched the complete result and had correct continuation fields. Inspection at all four returned navigations produced summaries identical to the search entries, including identity, kind, signature and declaration/definition counts.
+
+Damage upstream queries from the declaration and definition agreed on the precise Engine base implementation, with one direct result and no omissions. The reverse query retained both Damage and Heal direct overrides. Normal controls retained two IsExperienceLoaded candidates, one EndPlay upstream member, nine references and 37 outline items.
+
+Only the three expected negative searches were added to the unsuccessful-call log. No new plugin-attributed errors, API loading/thread-access exceptions or temporary probes appeared in the inspected window. A generic 0.818-second FlushAll watchdog and missing-token telemetry warnings were observed; these were not established as plugin-caused failures. Existing asset-cache errors occurred before the query window. This does not claim a warning-free IDE or a latency guarantee.
+
+The two targeted fixes passed these installed cases. The run did not repeat the entire historical semantic/performance matrix, deliberately create unknown/ambiguous index states, or repeat cancellation, diagnostics, registration and every hierarchy branch. Conservative partial-result behavior remains in place for unverified states; no project source was edited or built.
+
+## Version 0.3.10 exported-source checks
+
+The 45-file public source snapshot completed RD generation, C#/Kotlin compilation, both regression harnesses, packaging, configuration checks and Plugin Verifier through its own build entry point. The run used `--rerun-tasks --no-build-cache --offline` with in-process Kotlin compilation; all 22 scheduled tasks executed. Existing downloaded dependencies were reused through the supported cache-root option, while project state and outputs belonged to the snapshot.
+
+Plugin Verifier **1.410** reported **Compatible** against **`RD-262.10315.191`**, with **0 bytes** downloaded. The rebuilt plugin ZIP was byte-for-byte identical to the artifact covered by the installed 0.3.10 checks above. Exporter verification confirmed that all 45 source inputs, including the regenerated protocol files, still matched after the build. This record was then added to the source documentation without changing plugin binaries. The check did not exercise a new machine or empty dependency caches.
+
 ## Interpretation and limits
 
-- Windows and the exact Rider 2026.2.1 build are the current target. Other operating systems, Rider builds, and arbitrary .NET SDK versions have not been validated.
+- Windows and the exact Rider 2026.2.2 build above are the current target; static checks and the representative installed scenarios above have been completed. Earlier Rider results are historical. Other operating systems and arbitrary .NET SDK versions have not been validated.
 - Measured times are observations from selected local queries, not benchmarks, service-level targets, or performance guarantees. Cold Rider computations may be slow; moving a query off the primary thread does not guarantee an entirely hitch-free IDE.
 - Semantic coverage follows Rider's loaded project model, index, PSI contexts, and ability to map physical files. Empty, partial, unsupported, or not-indexed results must be interpreted using the response diagnostics; no text-search fallback is used to simulate semantic success.
 - Diagnostics reflect the current Rider settings and daemon decisions. Stage applicability and cached state can affect findings. The normal Rider daemon policy can include an Unreal/UHT stage; the tool does not promise that every internal stage succeeds or expose a stage-disable switch.

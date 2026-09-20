@@ -16,6 +16,7 @@ using JetBrains.ProjectModel;
 using JetBrains.ReSharper.Feature.Services.CodeStructure;
 using JetBrains.ReSharper.Feature.Services.Cpp;
 using JetBrains.ReSharper.Feature.Services.Cpp.CodeStructure;
+using JetBrains.ReSharper.Feature.Services.Cpp.DeclaredElements;
 using JetBrains.ReSharper.Feature.Services.Cpp.Navigation.Goto;
 using JetBrains.ReSharper.Feature.Services.Cpp.Occurrences;
 using JetBrains.ReSharper.Feature.Services.Cpp.UE4;
@@ -325,28 +326,84 @@ namespace Bathur.ReSharperMcpToolset
 
                 stage = "resolve indexed symbols";
                 var symbolToEntity = _globalSymbolCache.LinkageCache.FindEntitiesBySymbols(indexedSymbols, null);
-                // Linkage entities provide Rider's semantic equality. Their declared-element wrappers do not:
-                // incomplete wrappers may throw from GetHashCode(), so never hash the wrappers themselves.
-                var declaredElements = CppLinkageEntityDeclaredElement.CreateWrappers(
-                        _psiServices,
-                        symbolToEntity.Values.Distinct())
-                    .OfType<ICppDeclaredElement>()
-                    .ToArray();
                 requestLifetime.ThrowIfNotAlive();
 
                 stage = "format indexed symbols";
                 var mapped = new List<CppSymbolSummary>();
                 var unmappedCount = 0;
                 var unreadableCount = 0;
-                foreach (var element in declaredElements)
+                var unresolvedCount = 0;
+                // Compare semantic entities and parser symbols, never incomplete declared-element wrappers.
+                var seenEntities = new HashSet<ICppLinkageEntity>();
+                var seenUnresolvedSymbols = new HashSet<ICppSymbol>(CppSymbolEqualityComparer.INSTANCE);
+                foreach (var parserSymbol in indexedSymbols)
                 {
                     try
                     {
                         requestLifetime.ThrowIfNotAlive();
+                        ICppLinkageEntity entity;
+                        ICppDeclaredElement element;
+                        var hasIndexedIdentity = symbolToEntity.TryGetValue(parserSymbol, out entity) && entity != null;
+                        if (hasIndexedIdentity)
+                        {
+                            if (!seenEntities.Add(entity)) continue;
+                            element = new CppLinkageEntityDeclaredElement(_psiServices, entity);
+                        }
+                        else
+                        {
+                            // Retain the source occurrence for semantic position resolution, not lexical presentation.
+                            if (!seenUnresolvedSymbols.Add(parserSymbol)) continue;
+                            element = new CppParserSymbolDeclaredElement(_psiServices, parserSymbol);
+                        }
+
                         if (!element.IsValid())
                         {
                             unreadableCount++;
                             continue;
+                        }
+
+                        if (!hasIndexedIdentity)
+                        {
+                            CppSourcePosition sourcePosition;
+                            var hasSourcePosition = TryMapSymbol(parserSymbol, out sourcePosition);
+                            requestLifetime.ThrowIfNotAlive();
+                            if (!hasSourcePosition)
+                            {
+                                unmappedCount++;
+                                continue;
+                            }
+
+                            // An indexed parser entry can be an elaborated type use. Its lexical container
+                            // does not identify the type; use the same unique-target PSI resolution as inspect.
+                            var resolution = ResolveTarget(sourcePosition.FilePath, sourcePosition.Line, sourcePosition.Column);
+                            requestLifetime.ThrowIfNotAlive();
+                            if (resolution.Status != "ok" || resolution.Elements.Length != 1)
+                            {
+                                unresolvedCount++;
+                                continue;
+                            }
+
+                            element = resolution.Elements[0];
+                        }
+
+                        element = CanonicalizeDeclaredElement(element);
+                        requestLifetime.ThrowIfNotAlive();
+                        var recoveredLinkage = element as CppLinkageEntityDeclaredElement;
+                        if (!hasIndexedIdentity)
+                        {
+                            if (recoveredLinkage == null || recoveredLinkage.GetLinkageEntity() == null)
+                            {
+                                unresolvedCount++;
+                                continue;
+                            }
+
+                            if (!recoveredLinkage.IsValid())
+                            {
+                                unreadableCount++;
+                                continue;
+                            }
+
+                            if (!seenEntities.Add(recoveredLinkage.GetLinkageEntity())) continue;
                         }
 
                         var matchesQuery = separatorIndex >= 0
@@ -360,7 +417,7 @@ namespace Bathur.ReSharperMcpToolset
                             continue;
                         }
 
-                        var summary = BuildSymbolSummary(element);
+                        var summary = BuildSymbolSummaryCore(element);
                         if (requestedKinds.Count > 0 && !requestedKinds.Contains(summary.Kind))
                         {
                             continue;
@@ -385,8 +442,6 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 var ordered = mapped
-                    .GroupBy(SymbolIdentityKey, StringComparer.OrdinalIgnoreCase)
-                    .Select(group => group.First())
                     .OrderBy(NavigationPath, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(NavigationLine)
                     .ThenBy(NavigationColumn)
@@ -411,13 +466,17 @@ namespace Bathur.ReSharperMcpToolset
                         $"{unreadableCount} indexed symbol(s) could not be read."));
                 }
 
-                var skippedCount = unmappedCount + unreadableCount;
+                if (unresolvedCount > 0)
+                {
+                    diagnostics.Add(Diagnostic(
+                        "unresolved_indexed_symbols",
+                        $"{unresolvedCount} indexed source occurrence(s) could not be resolved to a unique canonical target."));
+                }
 
-                var status = ordered.Length == 0 && skippedCount == 0
-                    ? "not_found"
-                    : skippedCount > 0
-                        ? "partial"
-                        : "ok";
+                var skippedCount = unmappedCount + unreadableCount + unresolvedCount;
+                var complete = skippedCount == 0;
+
+                var status = !complete ? "partial" : ordered.Length == 0 ? "not_found" : "ok";
                 return new SearchSymbolsResponse(
                     status,
                     pageItems,
@@ -425,7 +484,7 @@ namespace Bathur.ReSharperMcpToolset
                         request.Offset,
                         pageItems.Length,
                         ordered.Length,
-                        skippedCount == 0,
+                        complete,
                         hasMore,
                         hasMore ? request.Offset + pageItems.Length : -1,
                         skippedCount),
@@ -1798,12 +1857,23 @@ namespace Bathur.ReSharperMcpToolset
 
         private ICppDeclaredElement CanonicalizeDeclaredElement(ICppDeclaredElement element)
         {
+            element = CppDeclaredElementUtil.GetInnerIfCppDeclaredElement(element) as ICppDeclaredElement ?? element;
+            var existingLinkage = element as CppLinkageEntityDeclaredElement;
+            if (existingLinkage != null && existingLinkage.GetLinkageEntity() != null)
+            {
+                return existingLinkage;
+            }
+
             var parserSymbols = element.GetSymbols()
                 .OfType<ICppParserSymbol>()
                 .ToArray();
             if (parserSymbols.Length == 0)
             {
-                return element;
+                // Generated members can carry a resolve identity without any local parser symbols.
+                var resolvedIdentity = CppDeclaredElementUtil.GetLinkageEntityFromDeclaredElement(element);
+                return resolvedIdentity == null
+                    ? element
+                    : new CppLinkageEntityDeclaredElement(_psiServices, resolvedIdentity);
             }
 
             var linkageEntities = _globalSymbolCache.LinkageCache
@@ -1818,16 +1888,13 @@ namespace Bathur.ReSharperMcpToolset
                 return element;
             }
 
-            return CppLinkageEntityDeclaredElement.CreateWrappers(_psiServices, linkageEntities)
-                       .OfType<ICppDeclaredElement>()
-                       .SingleOrDefault()
-                   ?? element;
+            return new CppLinkageEntityDeclaredElement(_psiServices, linkageEntities[0]);
         }
 
         private CppInspectedSymbol BuildInspectedSymbol(ICppDeclaredElement element)
         {
             var canonicalElement = CanonicalizeDeclaredElement(element);
-            var summary = BuildSymbolSummary(canonicalElement);
+            var summary = BuildSymbolSummaryCore(canonicalElement);
             var locations = GetSymbolLocations(canonicalElement);
             return new CppInspectedSymbol(
                 summary,
@@ -1841,7 +1908,11 @@ namespace Bathur.ReSharperMcpToolset
 
         private CppSymbolSummary BuildSymbolSummary(ICppDeclaredElement element)
         {
-            element = CanonicalizeDeclaredElement(element);
+            return BuildSymbolSummaryCore(CanonicalizeDeclaredElement(element));
+        }
+
+        private CppSymbolSummary BuildSymbolSummaryCore(ICppDeclaredElement element)
+        {
             var locations = GetSymbolLocations(element);
             var navigation = locations.Definitions.FirstOrDefault(CanResolveNavigation)
                              ?? locations.Declarations.FirstOrDefault(CanResolveNavigation)
@@ -2001,7 +2072,8 @@ namespace Bathur.ReSharperMcpToolset
 
         private static string GetSignature(ICppDeclaredElement element)
         {
-            if (CppDeclaredElementType.IsType(element.GetElementType()))
+            var elementType = element.GetElementType();
+            if (CppDeclaredElementType.IsType(elementType) || elementType == CppDeclaredElementTypes.NAMESPACE)
             {
                 return string.Empty;
             }
@@ -2013,9 +2085,7 @@ namespace Bathur.ReSharperMcpToolset
             }
 
             var resolve = element as CppResolveEntityDeclaredElement;
-            return resolve != null
-                ? PresentSignature(resolve.GetCppType())
-                : string.Empty;
+            return resolve != null ? PresentSignature(resolve.GetCppType()) : string.Empty;
         }
 
         private static string PresentSignature(CppQualType cppType)

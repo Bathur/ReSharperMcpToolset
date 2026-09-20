@@ -1,5 +1,18 @@
 # Release notes
 
+## 0.3.10
+
+This release incorporates the changes since the public `0.3.7` release.
+
+- Updates the target to **Windows / Rider 2026.2.2 `RD-262.10315.191`**, with matching minimum and maximum build restrictions. Earlier Rider builds require the corresponding earlier plugin package.
+- Corrects search identities recovered from index entries with a null or missing linkage entity. A parser occurrence supplies only a physical identifier position; the existing position resolver must establish one valid, non-null canonical linkage entity before the result is returned.
+- Uses that resolved entity for the qualified name, kind, metadata, exact-name filtering, and deduplication. Parser lexical nesting is no longer exposed as a symbol identity or used to match a qualified query.
+- Reports `unresolved_indexed_symbols` when a recovery candidate cannot resolve to one canonical entity. These entries increase `page.skipped_count`, keep the response `partial`, and leave `page.total_mapped_count` unknown. Ambiguous candidates are not selected arbitrarily.
+- Recovers source symbols for upward override members with no attached parser symbols through Rider's resolve-to-linkage semantic identity and global symbol index. The existing physical source mapping remains in use, with no name or text-search fallback.
+- Uses the matching Rider RD model and bundled JBR 25.0.4. Build-tool versions, the ten tool contracts, generated protocol sources, response schema, timeout and threading behavior, and optional unsuccessful-call logging remain unchanged. Temporary semantic sampling code is absent.
+
+Installed checks covered 20 selected calls: recovered search identities, filtering, paging and navigation agreed, false nested qualified names no longer matched, and upstream recovery remained correct. See the [tool reference](docs/TOOLS.md) and [validation record](docs/VALIDATION.md) for scope and limits.
+
 ## 0.3.7
 
 - Fixes a null-reference failure in C++ symbol inspection when Rider's index returns an unresolved mapping.

@@ -109,6 +109,10 @@ Required argument: `name`, an exact, case-sensitive short name or C++ qualified 
 
 The response contains `symbols[]` with all matching candidates on the requested page. Multiple overloads or scopes are normal search results; this tool does not choose a target for you. A qualified name narrows the scope but can still match multiple overloads.
 
+Search merges occurrences using Rider's linkage-entity equality. If an index entry has no linkage identity, its parser occurrence supplies only a physical identifier position for the same semantic resolver used by inspection. Recovery must produce one valid, non-null canonical linkage entity. The result's qualified name, kind, and metadata come from that entity, and exact-name and kind filters apply to that resolved identity. Parser lexical nesting is not a returned identity, and matching names or locations alone do not merge results.
+
+`unresolved_indexed_symbols` is one combined diagnostic for recovery candidates whose canonical identity could not be established. These entries are omitted, increase `page.skipped_count`, and make the response `partial`; the tool does not choose an arbitrary target when position resolution is ambiguous. `page.total_mapped_count` is omitted when search completeness cannot be established. An omitted total is unknown, not zero; continue paging through available results with `page.has_more` and `page.next_offset`.
+
 `kinds` filters normalized names such as `class`, `struct`, `method`, `function`, `field`, `enum`, or `namespace`. Filter strings are trimmed and lowercased; this does not make the symbol name case-insensitive. An empty filter is a useful first query when the kind is uncertain.
 
 ```json
@@ -143,6 +147,8 @@ All four tools require `file_path`, `line`, and `column`, and accept optional `o
 | `resharper_cpp_find_overriding_members` | Virtual, pure-virtual, or interface member | `overriding_members[]`: Rider-known transitive downstream C++ overrides or implementations. |
 
 For an upward walk, repeat a direct-base or direct-overridden query at a returned symbol's navigation. Use inspection to move between declarations and definitions.
+
+If Rider returns an overridden member without attached parser symbols, the plugin uses Rider's resolve-to-linkage semantic identity to recover its global source symbols, then applies the existing physical source mapping. This recovery does not match members by name or text. A member that still cannot be mapped remains an explicitly incomplete result.
 
 Derived and overriding results are flat collections. Their `relation` is `direct` or `indirect` when established by Rider's hierarchy queries. If the direct query is incomplete, unconfirmed relationships are `unknown` and the response is `partial`; confirmed direct relationships remain `direct`. Ordering does not encode ancestry paths or depth. These tools exclude Rider's recognized Unreal asset hierarchy results. Unavailable C++ results or unsupported result shapes are reported as incomplete. Direct-base semantic flags are strings that may be `"unknown"`, rather than guaranteed JSON booleans.
 
