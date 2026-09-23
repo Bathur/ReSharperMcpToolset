@@ -1,5 +1,23 @@
 # Release notes
 
+## 0.3.17
+
+This release incorporates the changes since the public `0.3.10` release. The target remains **Windows / Rider 2026.2.2 `RD-262.10315.191`**, with the same ten tools and response schemas.
+
+- Corrects exact-name lookup for indexed template specializations, including qualified template arguments, and for conversion and literal operators. Candidate index keys are separated from exact-name matching. Ordinary short-name searches, template-family lookup, case sensitivity, qualified-name filtering, and pagination remain available.
+- Supports both C++ operator spellings and Rider's returned conversion/literal name forms. Unsupported syntax is reported explicitly; unexpected SDK failures preserve their preparation stage and cause as tool errors. Parsing uses an in-memory C++ context and creates no project file.
+- Corrects symbol-kind classification for global, member, conversion and literal operators, and concepts, including `kinds` filtering.
+- Preserves case-distinct C++ entities in hierarchy deduplication and direct/indirect relationship classification.
+- Restricts upstream override queries to virtual override relationships, excluding non-virtual name hiding. Missing or incomplete relationship models remain `partial`; known relationships, source mapping, and pagination are retained.
+- Checks existing-file registration containment using resolved physical paths, closing the intermediate-directory-alias escape. Ordinary registration faults retain the known execution stage and same-argument retry guidance; cancellation continues to propagate.
+- Attributes timeout messages only to the tool's own timeout scope and preserves caller cancellation. Stabilizes two logging-failure tests without changing the best-effort logging policy.
+- Clarifies diagnostics position filtering: caret matching includes the end position, while returned character ranges remain end-exclusive.
+- Hardens the source-build downloader with bounded HTTP Range reads, attempt deadlines, case-sensitive ZIP entry matching, source-bound cache validation, required expected size/SHA-256, and verified output replacement. `rider-model.lock.json` also enforces the model's size and hash before RD classpath use. These source-build utilities do not change the installed plugin's runtime dependencies.
+
+Installed acceptance covered exact template and operator queries, ordinary-name and negative controls, pagination, and inspection of returned targets. The changes also received focused hierarchy, path-containment, cancellation and error-recovery checks during development. Isolated tests and representative runtime results are described separately in the [validation record](docs/VALIDATION.md).
+
+Known limits remain. Conversion searches can return the correct target with `partial` results when other index occurrences cannot be resolved. Some external sources have primary C++ PSI but are unavailable through the position-query route. Upstream `EndPlay` metadata can differ from inspection. This release does not claim to fix those gaps or to cover every C++/Unreal state; see the [tool reference](docs/TOOLS.md).
+
 ## 0.3.10
 
 This release incorporates the changes since the public `0.3.7` release.

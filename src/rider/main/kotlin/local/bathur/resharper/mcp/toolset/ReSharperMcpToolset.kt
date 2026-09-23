@@ -12,9 +12,7 @@ import com.intellij.mcpserver.mcpFail
 import com.intellij.mcpserver.project
 import com.intellij.mcpserver.util.resolveInProject
 import com.jetbrains.rider.projectView.solution
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -159,7 +157,7 @@ class ReSharperMcpToolset : McpToolset {
         """
         Runs a fresh headless ReSharper C++ daemon analysis for one indexed file; use it instead of generic get_file_problems for C++/Unreal.
         Rider's normal stages and effective severity settings apply, including UHT when applicable. Findings are Rider's current diagnostics, not a build verdict, and no Quick Fix is performed.
-        Code findings and query-completeness diagnostics are separate; ranges are 1-based and end-exclusive. Position and severity are post-filters; pagination reruns the full analysis.
+        Code findings and query-completeness diagnostics are separate; character ranges are 1-based and end-exclusive. Position filtering uses Rider's caret containment, including the range's end position; an empty range matches its position. Position and severity are post-filters; pagination reruns the full analysis.
         """
     )
     suspend fun resharper_cpp_get_diagnostics(
@@ -249,7 +247,7 @@ class ReSharperMcpToolset : McpToolset {
         Registers one existing, unregistered ordinary C++ file under an explicit already-registered Rider project-tree parent using Add Existing Item.
         Use after external patch/copy causes file-based semantic tools to report psi_source_not_registered; absence from global symbol search alone is insufficient.
         It may create project folder/filter nodes for missing physical subdirectories, but never creates, edits, copies, moves, links, or deletes content. The file must be a strict descendant; directories and recursive import are unsupported.
-        The operation is idempotent: retry identical arguments after an unknown timeout, and use project_name only for returned ambiguity. semantic_ready covers the project item and primary C++ PSI/code model, not every global name cache.
+        The operation is idempotent: retry identical arguments when a timeout, cancellation, or fault leaves the registration result unavailable, and use project_name only for returned ambiguity. semantic_ready covers the project item and primary C++ PSI/code model, not every global name cache.
         """
     )
     suspend fun resharper_cpp_add_existing_file(
@@ -383,7 +381,7 @@ class ReSharperMcpToolset : McpToolset {
     @McpTool
     @McpDescription(
         """
-        Returns the nearest base member(s) directly overridden by an exact C++ function/method position. Repeat on returned navigation to walk upward; multiple inheritance may return several results.
+        Returns the nearest base member(s) directly overridden by an exact C++ function/method position. Name hiding without a virtual override is excluded. Repeat on returned navigation to walk upward; multiple inheritance may return several results.
         This is not declaration-to-definition lookup (use resharper_cpp_inspect_symbol), and it never matches names/signatures heuristically. Ambiguous positions do not query.
         Continue stateless pagination with next_offset; partial means mapped results are incomplete.
         """
@@ -573,16 +571,16 @@ class ReSharperMcpToolset : McpToolset {
             mcpFail("timeout_ms must be between 1000 and $maxTimeoutMs")
         }
 
-        return try {
-            withTimeout(timeoutMs.toLong()) {
-                block()
-            }
-        } catch (_: TimeoutCancellationException) {
-            mcpFail(
-                "ReSharper C++ $operationLabel timed out after $timeoutMs ms. " +
-                    "Retry with a larger timeout_ms when a longer $operationLabel is intentional."
-            )
-        }
+        return withOwnTimeout(
+            timeoutMs = timeoutMs.toLong(),
+            onTimeout = {
+                mcpFail(
+                    "ReSharper C++ $operationLabel timed out after $timeoutMs ms. " +
+                        "Retry with a larger timeout_ms when a longer $operationLabel is intentional."
+                )
+            },
+            block = block,
+        )
     }
 
     private fun validatePosition(line: Int, column: Int) {

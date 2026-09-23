@@ -2,8 +2,11 @@
 // Licensed under GPL-3.0-only with the Rider/ReSharper host linking permission.
 // See LICENSE and LICENSING.md in the public source root.
 
+import groovy.json.JsonSlurper
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.security.MessageDigest
+import java.util.HexFormat
 import javax.xml.parsers.DocumentBuilderFactory
 
 plugins {
@@ -80,6 +83,25 @@ val failureLogTest by tasks.registering(JavaExec::class) {
     args(layout.buildDirectory.dir("failure-log-tests").get().asFile.absolutePath)
 }
 
+val ownTimeoutTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("local.bathur.resharper.mcp.toolset.OwnTimeoutTestsKt")
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(25))
+    })
+}
+
+val registrationSafetyTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("local.bathur.resharper.mcp.toolset.RegistrationSafetyTestsKt")
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(25))
+    })
+    args(layout.buildDirectory.dir("registration-safety-tests").get().asFile.absolutePath)
+}
+
 tasks.withType<KotlinCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_25)
@@ -137,6 +159,24 @@ val consumerDiagnosticsTest by tasks.registering(Exec::class) {
         "-RiderHome", RiderHome,
         "-BackendPath", "src/dotnet/$DotnetPluginId/bin/$DotnetPluginId.Rider/$BuildConfiguration/$DotnetAssemblyName.dll"
     )
+}
+
+val searchNamesTest by tasks.registering(Exec::class) {
+    dependsOn(compileDotNet)
+    workingDir(rootDir)
+    commandLine(
+        "pwsh", "-NoProfile", "-File", "tools/Test-SearchNames.ps1",
+        "-RiderHome", RiderHome,
+        "-BackendPath", "src/dotnet/$DotnetPluginId/bin/$DotnetPluginId.Rider/$BuildConfiguration/$DotnetAssemblyName.dll"
+    )
+}
+
+val remoteZipEntryTest by tasks.registering(Exec::class) {
+    workingDir(rootDir)
+    commandLine("pwsh", "-NoProfile", "-File", "tools/Test-RemoteZipEntry.ps1")
+    providers.gradleProperty("RemoteZipTestPython").orNull?.let { pythonPath ->
+        args("-PythonPath", pythonPath)
+    }
 }
 
 val publicationRoot = if (file("LICENSE").isFile) rootDir else file("release")
@@ -252,12 +292,56 @@ val riderModel: Configuration by configurations.creating {
     isCanBeResolved = false
 }
 
-artifacts {
-    add(riderModel.name, provider {
-        layout.projectDirectory.file(".sdk/rider-model.jar").asFile.also {
-            check(it.isFile) {
-                "rider-model.jar was not extracted into .sdk"
-            }
+val riderModelLockFile = layout.projectDirectory.file("rider-model.lock.json").asFile
+val riderModelLock = JsonSlurper().parse(riderModelLockFile) as? Map<*, *>
+    ?: error("rider-model.lock.json must contain a JSON object.")
+check(riderModelLock["schemaVersion"] == 1) { "Unsupported rider-model.lock.json schema version." }
+check(riderModelLock["riderBuild"] == RiderBuild) {
+    "rider-model.lock.json must match the locked Rider build $RiderBuild."
+}
+val expectedRiderModelSize = riderModelLock["size"]?.toString()?.toLongOrNull()
+    ?.takeIf { it > 0 } ?: error("rider-model.lock.json must specify a positive integer size.")
+val expectedRiderModelSha256 = riderModelLock["sha256"] as? String
+    ?: error("rider-model.lock.json must specify sha256.")
+check(Regex("[A-Fa-f0-9]{64}").matches(expectedRiderModelSha256)) {
+    "rider-model.lock.json must specify a 64-digit SHA-256."
+}
+// The override selects only the file to read, never the expected locked identity.
+val riderModelInput = providers.gradleProperty("RiderModelFile")
+    .map { file(it) }
+    .orElse(layout.projectDirectory.file(".sdk/rider-model.jar").asFile)
+
+fun validateRiderModelInput(): File {
+    val modelFile = riderModelInput.get()
+    check(modelFile.isFile) { "The locked Rider model input does not exist: $modelFile" }
+    check(modelFile.length() == expectedRiderModelSize) {
+        "Rider model size mismatch at $modelFile: expected $expectedRiderModelSize, found ${modelFile.length()}."
+    }
+    val digest = MessageDigest.getInstance("SHA-256")
+    modelFile.inputStream().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            digest.update(buffer, 0, count)
         }
-    })
+    }
+    val actualHash = HexFormat.of().withUpperCase().formatHex(digest.digest())
+    check(actualHash.equals(expectedRiderModelSha256, ignoreCase = true)) {
+        "Rider model SHA-256 mismatch at $modelFile: expected $expectedRiderModelSha256, found $actualHash."
+    }
+    return modelFile
+}
+
+val verifyRiderModel by tasks.registering {
+    inputs.file(riderModelLockFile)
+    inputs.file(riderModelInput)
+    doLast {
+        val modelFile = validateRiderModelInput()
+        logger.lifecycle("Verified Rider model size and SHA-256: $modelFile")
+    }
+}
+
+artifacts {
+    add(riderModel.name, provider { validateRiderModelInput() })
 }

@@ -35,6 +35,8 @@ Symbol summaries contain `name`, `qualified_name`, `kind`, declaration and defin
 
 The core semantic queries report `search_scope: "current_solution_and_rider_known_libraries"`. This can include Engine and library source outside the project directory when Rider knows it. It does not establish complete coverage of every file in an Engine installation. File outlines and diagnostics use the file's primary C++ PSI context, rather than enumerating every possible translation-unit configuration of a shared header.
 
+There is a known external-source context gap in 0.3.17: a file's primary C++ PSI may be available to the outline tool while the document-based position resolver reports `not_indexed / psi_not_available`. Inspection and other position-based tools can therefore fail at a location from an otherwise successful outline. This is not proof that the file is unregistered or wholly unparseable. The release retains the explicit failure; it does not guess a target from the outline or lexical text.
+
 ### Paging and time limits
 
 All list tools accept the following optional paging arguments. Inspection and file registration do not use pagination.
@@ -57,6 +59,8 @@ Every tool accepts optional `timeout_ms`:
 | File outline and existing-file registration | `30000` | `1000`–`120000` |
 
 For the nine query tools, timeouts are tool errors, not a `status: "partial"` response. Reference and diagnostic timeouts cancel the request without returning intermediate results as a complete or pageable set. Raise the limit for intentional large queries. There is no separate cancellation tool. Registration has additional timeout semantics described below because a project-model change may already have committed.
+
+The query wrapper converts only its own timeout into the tool's timeout message. Cancellation from an enclosing caller or another timeout scope is propagated instead of being attributed to the requested tool budget.
 
 ### Status and query diagnostics
 
@@ -109,11 +113,19 @@ Required argument: `name`, an exact, case-sensitive short name or C++ qualified 
 
 The response contains `symbols[]` with all matching candidates on the requested page. Multiple overloads or scopes are normal search results; this tool does not choose a target for you. A qualified name narrows the scope but can still match multiple overloads.
 
+Template arguments remain part of the exact match: `Box<int>` does not select another specialization or the primary template. A bare short name such as `Box` can return the indexed template family. Prefer a returned `qualified_name` when selecting a particular specialization or operator; a template instantiation that Rider has not independently indexed is not guaranteed to be searchable.
+
+Special name syntax is parsed with Rider's C++ name parser, with compatibility for Rider's returned conversion and literal operator names. An unsupported name representation produces `unsupported` with a diagnostic instead of being reported as absent. Parsing a name does not establish that its target is indexed. Conversion operator searches may still require a larger timeout because they share an index bucket, even when the requested name is qualified.
+
+Unexpected SDK failures remain tool errors with a preparation stage and the original cause; they are not classified as unsupported input. Name parsing uses an in-memory C++ context and does not create a project file.
+
 Search merges occurrences using Rider's linkage-entity equality. If an index entry has no linkage identity, its parser occurrence supplies only a physical identifier position for the same semantic resolver used by inspection. Recovery must produce one valid, non-null canonical linkage entity. The result's qualified name, kind, and metadata come from that entity, and exact-name and kind filters apply to that resolved identity. Parser lexical nesting is not a returned identity, and matching names or locations alone do not merge results.
 
 `unresolved_indexed_symbols` is one combined diagnostic for recovery candidates whose canonical identity could not be established. These entries are omitted, increase `page.skipped_count`, and make the response `partial`; the tool does not choose an arbitrary target when position resolution is ambiguous. `page.total_mapped_count` is omitted when search completeness cannot be established. An omitted total is unknown, not zero; continue paging through available results with `page.has_more` and `page.next_offset`.
 
-`kinds` filters normalized names such as `class`, `struct`, `method`, `function`, `field`, `enum`, or `namespace`. Filter strings are trimmed and lowercased; this does not make the symbol name case-insensitive. An empty filter is a useful first query when the kind is uncertain.
+These are counts of unresolved index occurrences, not a proven number of missing matches for the requested qualified name. External-source position failures can occur before exact-name filtering, particularly in the shared conversion-operator index bucket. Returning the expected target does not make an otherwise partial search complete or establish that it is the only match.
+
+`kinds` filters normalized names such as `class`, `struct`, `method`, `function`, `field`, `enum`, `namespace`, `concept`, `global_operator`, `member_operator`, `conversion_operator`, or `literal_operator`. Filter strings are trimmed and lowercased; this does not make the symbol name case-insensitive. An empty filter is a useful first query when the kind is uncertain.
 
 ```json
 {
@@ -148,7 +160,11 @@ All four tools require `file_path`, `line`, and `column`, and accept optional `o
 
 For an upward walk, repeat a direct-base or direct-overridden query at a returned symbol's navigation. Use inspection to move between declarations and definitions.
 
+`get_direct_overridden_members` follows virtual override relationships and excludes non-virtual members hidden by the same name. A function known to have no overridden member returns an empty result. If Rider cannot fully determine the virtual relationships, the response is `partial` and omits a reliable total count; `skipped_count` only counts specific unreadable or unmappable results, so it can remain zero.
+
 If Rider returns an overridden member without attached parser symbols, the plugin uses Rider's resolve-to-linkage semantic identity to recover its global source symbols, then applies the existing physical source mapping. This recovery does not match members by name or text. A member that still cannot be mapped remains an explicitly incomplete result.
+
+One accepted limitation remains: an upstream result for `UActorComponent::EndPlay` can identify the correct member while reporting a different signature, declaration/definition count, or preferred navigation from `inspect_symbol`. Other runs have returned matching summaries; a general fix has not been established. Compare with inspection when those fields are important, rather than treating an `ok` relationship result as proof that all metadata agrees.
 
 Derived and overriding results are flat collections. Their `relation` is `direct` or `indirect` when established by Rider's hierarchy queries. If the direct query is incomplete, unconfirmed relationships are `unknown` and the response is `partial`; confirmed direct relationships remain `direct`. Ordering does not encode ancestry paths or depth. These tools exclude Rider's recognized Unreal asset hierarchy results. Unavailable C++ results or unsupported result shapes are reported as incomplete. Direct-base semantic flags are strings that may be `"unknown"`, rather than guaranteed JSON booleans.
 
@@ -178,14 +194,14 @@ The outline excludes locals, parameters, preprocessor directives, macro definiti
 | Argument | Required | Default and meaning |
 | --- | --- | --- |
 | `file_path` | Yes | One indexed physical C++ file. |
-| `line`, `column` | No | Omitted together. If supplied, both must be positive, 1-based integers; keep findings whose ranges contain that point. |
+| `line`, `column` | No | Omitted together. If supplied, both must be positive, 1-based integers; use Rider's caret containment, including both range endpoints. An empty range matches its sole position. |
 | `min_severity` | No | `"warning"`; accepts `error`, `warning`, `suggestion`, `hint`, or `info`. Uses Rider's effective severity settings. |
 | `offset`, `max_results` | No | Shared paging defaults and limits. |
 | `timeout_ms` | No | `60000`; range `1000`–`600000`. |
 
 The tool runs a fresh headless ReSharper C++ daemon analysis. It applies Rider's effective settings and normal `VISIBLE_DOCUMENT` stage policy, including Unreal/UHT when Rider considers it applicable. There is no stage-selection argument, and this result is not published into Rider's editor highlighting or solution-wide analysis store. Non-user and generated files can receive different analysis coverage; inspect `source_file` and `daemon` metadata.
 
-`findings[]` contains code diagnostics with effective severity, highlighting type, contributing stage, message and inspection/compiler IDs when available. Each `range` uses an absolute `file_path`, 1-based start/end coordinates, and an exclusive end. `findings_metadata` accounts for filtering and skipped or unreadable results. Query-completeness issues remain in the separate `diagnostics[]` array.
+`findings[]` contains code diagnostics with effective severity, highlighting type, contributing stage, message and inspection/compiler IDs when available. Each `range` describes characters using an absolute `file_path`, 1-based start/end coordinates, and an exclusive end. The position filter also accepts a caret exactly at that end coordinate; this does not change the returned character range. `findings_metadata` accounts for filtering and skipped or unreadable results. Query-completeness issues remain in the separate `diagnostics[]` array.
 
 Position and severity are filters after the daemon run; they do not restrict the analyzer's work. Pagination runs the full analysis again. `daemon.completion_basis: "do_highlighting_returned"` means the outer daemon call returned, and does not prove every internal stage succeeded. Findings describe Rider's current analysis, not a successful build or a guarantee that all code issues were detected.
 
@@ -210,7 +226,7 @@ This is the only tool that changes Rider's project model. Use it after an extern
 | `project_name` | No | Exact, case-sensitive project name; omit initially, then use a returned candidate to resolve ambiguity. |
 | `timeout_ms` | No | Default `30000`; range `1000`–`120000`. |
 
-Both paths may be project-relative or absolute. The tool invokes Rider's Add Existing Item action for one file. It can create project folder/filter nodes for missing physical subdirectories, but does not create, edit, copy, move, link, or delete source content. It accepts neither a directory import nor recursive registration, and does not automatically search for the nearest registered parent.
+Both paths may be project-relative or absolute. Containment is checked after resolving directory aliases to their physical targets. The tool invokes Rider's Add Existing Item action for one file. It can create project folder/filter nodes for missing physical subdirectories, but does not create, edit, copy, move, link, or delete source content. It accepts neither a directory import nor recursive registration, and does not automatically search for the nearest registered parent.
 
 If the parent belongs to multiple project entities, the response contains `parent_candidates`. Retry with an exact returned `project_name`. If that still cannot identify one parent, the request is unsupported instead of choosing an unstable item ID.
 
@@ -224,7 +240,7 @@ Completed responses report `before` and `after` states for `project_item_registe
 | `registered_semantic_pending` | Rider accepted registration, but readiness was not fully observed before the deadline; the response is `partial`. |
 | `registration_failed` | Rider rejected the operation or returned no usable per-item result; inspect diagnostics and the before/after state. |
 
-A timeout before modification explicitly reports that no project-model change was attempted. A timeout while waiting for Add Existing Item may leave the commit result unknown. In that case retry with **exactly the same `parent_directory`, `file_path`, and `project_name`**. Registration is idempotent and will not add a duplicate item. Do not infer that the operation failed or attempt a different parent merely because it timed out.
+Ordinary errors and the tool's own timeout preserve the known registration stage: not attempted, commit result unknown, or Rider accepted/rejected the request before final verification became unavailable. Cancellation propagates unchanged and may provide no final registration state. When a timeout, cancellation, or fault leaves the registration result unavailable, retry with **exactly the same `parent_directory`, `file_path`, and `project_name`**. Registration is idempotent and will not add a duplicate item. Do not infer that no change occurred or choose a different parent solely because the response was unavailable. A missing per-item result also retains the same-argument retry guidance in diagnostics.
 
 Example after the file has already been created by your normal editing workflow:
 

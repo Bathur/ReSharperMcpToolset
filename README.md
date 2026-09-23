@@ -4,6 +4,8 @@
 
 ReSharper MCP Toolset brings ReSharper C++ semantic capabilities to AI assistants through JetBrains Rider's built-in MCP server. Designed around Unreal Engine C++ development workflows, it lets an assistant inspect symbols, trace references, explore inheritance and overrides, read declaration outlines, and query C++ diagnostics in the context of your loaded project.
 
+Version **0.3.17** targets **Windows / Rider 2026.2.2 `RD-262.10315.191`**. It improves exact template and operator-name lookup, virtual-override selection, symbol-kind classification, cancellation handling, and existing-file registration safeguards. See the [release notes](RELEASE_NOTES.md) for the changes since 0.3.10.
+
 It runs inside Rider and uses the same ReSharper C++ project model and semantic infrastructure that power the IDE. Game modules, GameFeature plugins, Engine source, templates, and Unreal reflection macros shaped its design and validation. This is a Rider plugin; it does not need to be installed in your Unreal project.
 
 ## What you can do
@@ -68,10 +70,12 @@ Writing is best effort: calls do not wait for disk, a full 32-record queue drops
 ## Behavior and limits
 
 - Queries depend on Rider's current project model, PSI, indexes, and settings. An empty result is not proof that a symbol or relationship cannot exist in another context.
-- Search accepts exact, case-sensitive names. Reference queries do not automatically merge references to base members or overrides.
+- Search accepts exact, case-sensitive names, including indexed template specializations and Rider's returned operator names. A bare template short name can return its indexed family. Reference queries do not automatically merge references to base members or overrides.
 - Large Engine queries can take substantial time. Pagination bounds the response size, but some queries still compute the complete result before returning a page. Diagnostics rerun analysis for each page.
 - Diagnostic analysis can run Rider's normal Unreal/UHT stage when Rider considers it applicable. The plugin does not expose a build command or directly launch UBT/UHT, and diagnostics are not a substitute for compiling your project.
 - Shared headers, generated declarations, and macro expansion can limit physical source mapping. A `partial` response explains missing or skipped results.
+- Some external/library files can return a valid outline while position-based queries report `not_indexed`. Search may consequently remain `partial` even when it returns the requested target. This known source-context routing gap is not fixed in 0.3.17; it does not establish that the whole file lacks C++ semantic data.
+- Upstream override identity can be correct while its signature, declaration/definition counts, or preferred navigation differ from inspection. This state-dependent behavior has been observed for `UActorComponent::EndPlay` and is not claimed to be resolved. Inspect the returned member when those details matter; `ok` alone does not establish metadata equivalence.
 - The plugin does not claim zero IDE stalls, exhaustive C++ analysis, or a stable API across Rider releases. Exact version targeting is intentional.
 
 The [validation record](docs/VALIDATION.md) separates current runtime evidence from historical tests and unperformed checks.

@@ -27,6 +27,7 @@ using JetBrains.ReSharper.Psi;
 using JetBrains.ReSharper.Psi.Cpp.Caches;
 using JetBrains.ReSharper.Psi.Cpp.Language;
 using JetBrains.ReSharper.Psi.Cpp.Presentation;
+using JetBrains.ReSharper.Psi.Cpp.Resolve;
 using JetBrains.ReSharper.Psi.Cpp.Symbols;
 using JetBrains.ReSharper.Psi.Cpp.Tree;
 using JetBrains.ReSharper.Psi.Cpp.Types;
@@ -285,21 +286,6 @@ namespace Bathur.ReSharperMcpToolset
                         request.Offset);
                 }
 
-                var query = request.Name.Trim();
-                var normalizedQuery = query.TrimStart(':');
-                var separatorIndex = normalizedQuery.LastIndexOf("::", StringComparison.Ordinal);
-                var shortName = separatorIndex >= 0
-                    ? normalizedQuery.Substring(separatorIndex + 2)
-                    : normalizedQuery;
-                if (string.IsNullOrWhiteSpace(shortName))
-                {
-                    return SearchFailure(
-                        "not_found",
-                        "invalid_name",
-                        "name must end with a C++ symbol name",
-                        request.Offset);
-                }
-
                 var requestedKinds = new HashSet<string>(
                     request.Kinds
                         .Where(kind => !string.IsNullOrWhiteSpace(kind))
@@ -316,10 +302,20 @@ namespace Bathur.ReSharperMcpToolset
                         request.Offset);
                 }
 
-                var indexedSymbols = Enumerable
-                    .Where(
-                        _globalSymbolCache.SymbolNameCache.GetSymbolsByShortNameWithReadLockHeld(shortName).ToEnumerable(),
-                        (ICppSymbol symbol) => CppGotoSymbolUtil.IsValidSymbol(symbol))
+                stage = "parse C++ search name";
+                CppSearchNameQuery query;
+                string queryError;
+                if (!CppSearchNameQuery.TryCreate(_globalSymbolCache, request.Name, out query, out queryError))
+                {
+                    return SearchFailure("unsupported", "unsupported_name", queryError, request.Offset);
+                }
+                requestLifetime.ThrowIfNotAlive();
+
+                stage = "query C++ symbol index";
+                var indexedSymbols = query.IndexKeys
+                    .SelectMany(indexKey => _globalSymbolCache.SymbolNameCache
+                        .GetSymbolsByShortNameWithReadLockHeld(indexKey).ToEnumerable())
+                    .Where((ICppSymbol symbol) => CppGotoSymbolUtil.IsValidSymbol(symbol))
                     .OfType<ICppParserSymbol>()
                     .ToArray();
                 requestLifetime.ThrowIfNotAlive();
@@ -406,13 +402,7 @@ namespace Bathur.ReSharperMcpToolset
                             if (!seenEntities.Add(recoveredLinkage.GetLinkageEntity())) continue;
                         }
 
-                        var matchesQuery = separatorIndex >= 0
-                            ? string.Equals(
-                                GetQualifiedName(element).TrimStart(':'),
-                                normalizedQuery,
-                                StringComparison.Ordinal)
-                            : string.Equals(element.ShortName, shortName, StringComparison.Ordinal);
-                        if (!matchesQuery)
+                        if (!query.Matches(element.ShortName, query.RequiresQualifiedName ? GetQualifiedName(element) : null))
                         {
                             continue;
                         }
@@ -1321,7 +1311,7 @@ namespace Bathur.ReSharperMcpToolset
                         NullProgressIndicator.CreateCancellable(requestLifetime)),
                     out unavailableDirectOccurrences);
                 requestLifetime.ThrowIfNotAlive();
-                var directKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var directKeys = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var directElement in directElements)
                 {
                     requestLifetime.ThrowIfNotAlive();
@@ -1358,7 +1348,7 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 var ordered = mapped
-                    .GroupBy(result => SemanticIdentityKey(result.Symbol), StringComparer.OrdinalIgnoreCase)
+                    .GroupBy(result => SemanticIdentityKey(result.Symbol), StringComparer.Ordinal)
                     .Select(group => group.OrderBy(result => result.Relation == "direct" ? 0 : 1).First())
                     .OrderBy(result => NavigationPath(result.Symbol), StringComparer.OrdinalIgnoreCase)
                     .ThenBy(result => NavigationLine(result.Symbol))
@@ -1470,15 +1460,48 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 stage = "find direct overridden members";
-                int unavailableOccurrences;
-                var baseElements = GetCppOccurrenceElements(
-                    CppContextSearchUtil.FindBases(
-                        target,
-                        NullProgressIndicator.CreateCancellable(requestLifetime)),
-                    out unavailableOccurrences);
+                var targetType = target.GetElementType();
+                var hierarchyComplete = true;
+                var unavailableOccurrences = 0;
+                var baseEntities = Array.Empty<ICppResolveEntity>();
+                // Free functions cannot override a class member. An unavailable member
+                // inheritance model, unlike this known empty case, is not a complete result.
+                if (targetType != CppDeclaredElementTypes.GLOBAL_FUNCTION &&
+                    targetType != CppDeclaredElementTypes.GLOBAL_OPERATOR &&
+                    targetType != CppDeclaredElementTypes.LITERAL_OPERATOR)
+                {
+                    var declarator = CppDeclaredElementUtil.GetResolveEntityFromDeclaredElement(target)
+                        as ICppDeclaratorResolveEntity;
+                    var groupedFunction = CppResolveEntityUtil.FindGroupedDeclarator(declarator)
+                        as ICppGroupedFunctionDeclaratorResolveEntity;
+                    requestLifetime.ThrowIfNotAlive();
+                    baseEntities = GetDirectOverriddenEntities(
+                        requestLifetime,
+                        CppMethodInheritanceInfo.GetCached(groupedFunction),
+                        out hierarchyComplete,
+                        out unavailableOccurrences);
+                }
                 requestLifetime.ThrowIfNotAlive();
 
                 stage = "map direct overridden members";
+                int unavailableMappedOccurrences;
+                // Preserve the host's declared-element and occurrence preparation before
+                // canonicalization, while selecting relationships only from virtual slots.
+                var baseElements = GetCppOccurrenceElements(
+                    baseEntities.Select(baseEntity =>
+                    {
+                        requestLifetime.ThrowIfNotAlive();
+                        var baseElement = CppDeclaredElementUtil.CreateClrDeclaredElement(_psiServices, baseEntity);
+                        return baseElement == null || !baseElement.IsValid()
+                            ? null
+                            : new CppDeclaredElementOccurrence(
+                                baseElement,
+                                OccurrencePresentationOptions.DefaultOptions,
+                                OccurrenceType.Occurrence);
+                    }),
+                    out unavailableMappedOccurrences);
+                unavailableOccurrences += unavailableMappedOccurrences;
+                requestLifetime.ThrowIfNotAlive();
                 var skippedCount = 0;
                 var mapped = new List<CppRelatedSymbolResult>();
                 foreach (var baseElement in baseElements)
@@ -1495,7 +1518,7 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 var ordered = mapped
-                    .GroupBy(result => SemanticIdentityKey(result.Symbol), StringComparer.OrdinalIgnoreCase)
+                    .GroupBy(result => SemanticIdentityKey(result.Symbol), StringComparer.Ordinal)
                     .Select(group => group.First())
                     .OrderBy(result => NavigationPath(result.Symbol), StringComparer.OrdinalIgnoreCase)
                     .ThenBy(result => NavigationLine(result.Symbol))
@@ -1506,6 +1529,13 @@ namespace Bathur.ReSharperMcpToolset
                 var pageItems = ordered.Skip(request.Offset).Take(request.MaxResults).ToArray();
                 var hasMore = request.Offset + pageItems.Length < ordered.Length;
                 var diagnostics = new List<CppSemanticDiagnostic>(resolution.Diagnostics);
+                if (!hierarchyComplete)
+                {
+                    diagnostics.Add(Diagnostic(
+                        "incomplete_override_relations",
+                        "The selected member's overridden relationships could not be fully determined."));
+                }
+
                 if (unavailableOccurrences > 0)
                 {
                     diagnostics.Add(Diagnostic(
@@ -1522,14 +1552,14 @@ namespace Bathur.ReSharperMcpToolset
 
                 var totalSkippedCount = skippedCount + unavailableOccurrences;
                 return new RelatedSymbolsResponse(
-                    totalSkippedCount > 0 ? "partial" : "ok",
+                    totalSkippedCount > 0 || !hierarchyComplete ? "partial" : "ok",
                     targets,
                     pageItems,
                     new CppPageInfo(
                         request.Offset,
                         pageItems.Length,
                         ordered.Length,
-                        totalSkippedCount == 0,
+                        totalSkippedCount == 0 && hierarchyComplete,
                         hasMore,
                         hasMore ? request.Offset + pageItems.Length : -1,
                         totalSkippedCount),
@@ -1625,7 +1655,7 @@ namespace Bathur.ReSharperMcpToolset
                         NullProgressIndicator.CreateCancellable(requestLifetime)),
                     out unavailableDirectOccurrences);
                 requestLifetime.ThrowIfNotAlive();
-                var directKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var directKeys = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var directElement in directElements)
                 {
                     requestLifetime.ThrowIfNotAlive();
@@ -1662,7 +1692,7 @@ namespace Bathur.ReSharperMcpToolset
                 }
 
                 var ordered = mapped
-                    .GroupBy(result => SemanticIdentityKey(result.Symbol), StringComparer.OrdinalIgnoreCase)
+                    .GroupBy(result => SemanticIdentityKey(result.Symbol), StringComparer.Ordinal)
                     .Select(group => group.OrderBy(result => result.Relation == "direct" ? 0 : 1).First())
                     .OrderBy(result => NavigationPath(result.Symbol), StringComparer.OrdinalIgnoreCase)
                     .ThenBy(result => NavigationLine(result.Symbol))
@@ -2097,6 +2127,10 @@ namespace Bathur.ReSharperMcpToolset
         private static string NormalizeKind(ICppDeclaredElement element, string containingType)
         {
             var elementType = element.GetElementType();
+            if (elementType == CppDeclaredElementTypes.CONVERSION_OPERATOR) return "conversion_operator";
+            if (elementType == CppDeclaredElementTypes.LITERAL_OPERATOR) return "literal_operator";
+            if (elementType == CppDeclaredElementTypes.MEMBER_OPERATOR) return "member_operator";
+            if (elementType == CppDeclaredElementTypes.GLOBAL_OPERATOR) return "global_operator";
             if (CppDeclaredElementType.IsFunction(elementType))
             {
                 return string.IsNullOrWhiteSpace(containingType) ? "function" : "method";
@@ -2104,16 +2138,13 @@ namespace Bathur.ReSharperMcpToolset
 
             if (elementType == CppDeclaredElementTypes.CONSTRUCTOR) return "constructor";
             if (elementType == CppDeclaredElementTypes.DESTRUCTOR) return "destructor";
-            if (elementType == CppDeclaredElementTypes.CONVERSION_OPERATOR) return "conversion_operator";
-            if (elementType == CppDeclaredElementTypes.LITERAL_OPERATOR) return "literal_operator";
-            if (elementType == CppDeclaredElementTypes.MEMBER_OPERATOR) return "member_operator";
-            if (elementType == CppDeclaredElementTypes.GLOBAL_OPERATOR) return "global_operator";
 
             if (elementType == CppDeclaredElementTypes.ENUM) return "enum";
             if (elementType == CppDeclaredElementTypes.STRUCT) return "struct";
             if (elementType == CppDeclaredElementTypes.UNION) return "union";
             if (elementType == CppDeclaredElementTypes.CLASS ||
                 elementType == CppDeclaredElementTypes.__INTERFACE) return "class";
+            if (elementType == CppDeclaredElementTypes.CONCEPT) return "concept";
             if (CppDeclaredElementType.IsType(elementType))
             {
                 return "type";
@@ -2134,7 +2165,6 @@ namespace Bathur.ReSharperMcpToolset
                 elementType == CppDeclaredElementTypes.TYPEDEF ||
                 elementType == CppDeclaredElementTypes.NAMESPACE_ALIAS) return "alias";
             if (elementType == CppDeclaredElementTypes.USING_DECLARATION) return "using_declaration";
-            if (elementType == CppDeclaredElementTypes.CONCEPT) return "concept";
             if (elementType == CppDeclaredElementTypes.PROPERTY) return "property";
             if (elementType == CppDeclaredElementTypes.EVENT) return "event";
             if (elementType == CppDeclaredElementTypes.MODULE ||
@@ -2207,6 +2237,42 @@ namespace Bathur.ReSharperMcpToolset
             }
 
             return elements.Distinct().ToArray();
+        }
+
+        private static ICppResolveEntity[] GetDirectOverriddenEntities(
+            Lifetime requestLifetime,
+            CppMethodInheritanceInfo methodInheritance,
+            out bool hierarchyComplete,
+            out int unavailableOccurrences)
+        {
+            requestLifetime.ThrowIfNotAlive();
+            hierarchyComplete = methodInheritance != null && methodInheritance.IsComplete;
+            requestLifetime.ThrowIfNotAlive();
+            unavailableOccurrences = 0;
+            if (methodInheritance == null)
+            {
+                return Array.Empty<ICppResolveEntity>();
+            }
+
+            // FindBases also includes non-virtual hides. Follow only virtual slots,
+            // keeping Rider's nearest explicit member policy for implicit/alias entries.
+            var virtualBases = methodInheritance.GetVirtualBases(skipImplicit: true, skipAliases: true);
+            requestLifetime.ThrowIfNotAlive();
+            var entities = new List<ICppResolveEntity>();
+            foreach (var slot in virtualBases)
+            {
+                requestLifetime.ThrowIfNotAlive();
+                var entity = slot?.Method?.Entity;
+                if (entity == null)
+                {
+                    unavailableOccurrences++;
+                    continue;
+                }
+
+                entities.Add(entity);
+            }
+
+            return entities.Distinct().ToArray();
         }
 
         private static string RelatedSymbolRelation(bool isDirect, bool directQueryComplete)

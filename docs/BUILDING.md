@@ -22,7 +22,7 @@ The currently recorded build inputs are:
 | IntelliJ Platform Gradle Plugin | `2.18.1` |
 | ReSharper backend references | The locked Rider installation's `lib/ReSharperHost` assemblies |
 | Backend target framework | `net472` |
-| Protocol model input | The matching Rider `rider-model.jar`, obtained below |
+| Protocol model input | The matching Rider `rider-model.jar`, pinned by `rider-model.lock.json` and obtained below |
 
 These are the recorded versions for the existing build. Do not infer compatibility with a newer Rider build or replace the toolchain versions as part of a routine build.
 
@@ -43,7 +43,7 @@ After configuring Rider and obtaining the RD model as described below, the norma
 - `compileDotNet` invokes `dotnet msbuild` with `/t:Restore;Rebuild`, so NuGet restoration is part of the backend build.
 - `verifyPlugin` obtains Plugin Verifier through the IntelliJ Platform Gradle Plugin. The IDE being checked remains the configured local Rider installation.
 
-The RD model JAR is the separate input you obtain with the single-entry extraction command below and verify by size and SHA-256. A copy of the maintainer's caches is not required. Initial restoration needs network access, usable NuGet package sources, and any proxy settings required by your network. The build isolates cache locations; it does not replace the machine's or user's NuGet configuration.
+The RD model JAR is the separate input you obtain with the single-entry extraction command below. The downloader and RD artifact provider both verify its locked size and SHA-256. A copy of the maintainer's caches is not required. Initial restoration needs network access, usable NuGet package sources, and any proxy settings required by your network. The build isolates cache locations; it does not replace the machine's or user's NuGet configuration.
 
 ## Configure the Rider installation
 
@@ -75,30 +75,32 @@ This shares downloaded dependencies without copying large cache directories. `.d
 
 The verified local Rider installation does not include the `rider-model.jar` required by RD generation. The supplied helper reads the matching JetBrains distribution using HTTP Range requests and extracts the requested entry; it does not download the complete Rider archive.
 
+The tracked `rider-model.lock.json` records the Rider build, official distribution URI, ZIP entry, byte count, and SHA-256. Use those values together:
+
 ```powershell
+$riderModelLock = Get-Content -LiteralPath .\rider-model.lock.json -Raw | ConvertFrom-Json
 pwsh -NoProfile -File .\tools\Get-RemoteZipEntry.ps1 `
-  -Uri "https://d2cico3c979uwg.cloudfront.net/com/jetbrains/intellij/rider/riderRD/2026.2.2/riderRD-2026.2.2.zip" `
-  -EntryName "lib/rd/rider-model.jar" `
+  -Uri $riderModelLock.uri `
+  -EntryName $riderModelLock.entryName `
+  -ExpectedSize $riderModelLock.size `
+  -ExpectedSha256 $riderModelLock.sha256 `
   -OutputPath ".sdk/rider-model.jar" `
-  -CentralDirectoryCachePath ".sdk/riderRD-2026.2.2-central.bin"
+  -CentralDirectoryCachePath ".sdk/riderRD-2026.2.2-central-verified.bin"
 ```
 
-The helper validates the extracted size against the ZIP entry and prints a hash. Before generation, also check the exact known input size and SHA-256:
+Expected size and SHA-256 are required downloader arguments. A successful extraction verifies them before replacing the output file; printing a newly computed hash alone is not accepted as verification. `RangeTimeoutSeconds` covers each request's headers and body (default 60 seconds). Transient range failures retry up to `MaxAttempts` (default 5); invalid range responses or changed object identities fail without retrying their bodies.
+
+The central-directory cache has a `.metadata.json` sidecar binding its URI, strong ETag, archive length, byte range and committed prefix digest. Existing unbound, mismatched or corrupted caches are rejected and preserved; select a new cache path instead of deleting unrelated cached dependencies. Only complete verified chunks are committed. Cache mode requires a strong ETag; without one, omit the cache argument for a fresh extraction that still must pass the expected size/hash checks. Relative paths use the current filesystem directory, full absolute paths are accepted, and drive-relative/root-relative or conflicting destination paths are rejected before network access.
+
+Check an existing model without generating or compiling the plugin:
 
 ```powershell
-$riderModelPath = Join-Path (Get-Location) ".sdk/rider-model.jar"
-$expectedModelSize = 3240366
-$expectedModelHash = "EB1695922C0E7FA8B73BA1ADFF5DA987D2DEF15CA14846F57FA266E8F2033AA7"
-
-if ((Get-Item -LiteralPath $riderModelPath).Length -ne $expectedModelSize) {
-    throw "The Rider model size does not match the recorded build input."
-}
-if ((Get-FileHash -LiteralPath $riderModelPath -Algorithm SHA256).Hash -ne $expectedModelHash) {
-    throw "The Rider model SHA-256 does not match the recorded build input."
-}
+pwsh -NoProfile -File .\build.ps1 verifyRiderModel --offline
 ```
 
-If the checks fail, stop and investigate the mismatch. Keep this JAR in the ignored `.sdk` directory as a local build input; do not include it in source archives or plugin packages.
+The same size/hash validation runs whenever the model artifact is selected for the RD classpath. A missing, wrong-size, or same-size corrupted file is rejected. The lock's Rider build must match `RiderBuild`. If a check fails, investigate the mismatch instead of accepting a new hash. Keep the JAR in the ignored `.sdk` directory; do not include it in source archives or plugin packages.
+
+For an isolated integrity fixture, `--project-prop 'RiderModelFile=build/model-fixture.jar'` selects a different file to read. Relative paths are resolved from the source root; absolute paths are accepted. Use this two-argument Gradle option for Windows absolute paths so PowerShell does not split a drive colon inside a combined `-P` argument. The override cannot change the expected size/hash or write to the selected file, and applies to both `verifyRiderModel` and RD artifact selection.
 
 ## Generate, compile, and package
 
@@ -125,6 +127,16 @@ Plugin Verifier is configured to check only the installed, locked Rider build. I
 
 Configuration validation can recommend removing `until-build`; this project deliberately retains the upper bound to match its exact Rider build restriction.
 
+The downloader has a separate offline regression task:
+
+```powershell
+pwsh -NoProfile -File .\build.ps1 remoteZipEntryTest --offline
+# Select an existing Python 3 runtime when python/python3 is not on PATH:
+pwsh -NoProfile -File .\build.ps1 remoteZipEntryTest --offline --project-prop 'RemoteZipTestPython=C:/Path/To/python.exe'
+```
+
+This task does not depend on plugin compilation. Its PowerShell harness starts a Python standard-library HTTP fixture bound to loopback, uses small ZIP inputs, and records evidence below `build/remote-zip-tests`. It does not contact the Rider download service or modify the existing `.sdk` model and cache. Python is required only for this regression task, not for normal plugin compilation.
+
 The detached logging and call-observation checks run without launching Rider:
 
 ```powershell
@@ -139,7 +151,23 @@ Consumer-diagnostic regression checks also run without launching Rider:
 pwsh -NoProfile -File .\build.ps1 consumerDiagnosticsTest
 ```
 
-This task rebuilds the backend and checks concise omission messages, hierarchy-result classification, relationship uncertainty, and qualifier-group child traversal against isolated objects from the locked SDK. It uses no additional test framework and does not replace validation in a loaded C++ project.
+This task rebuilds the backend and checks concise omission messages, symbol-kind and hierarchy-result classification, relationship uncertainty, qualifier-group child traversal, and direct virtual-base selection against isolated objects from the locked SDK. The virtual-base cases use precomputed in-memory relationships; they do not test C++ parsing or inheritance construction. It uses no additional test framework and does not replace validation in a loaded C++ project.
+
+Timeout and registration-safety checks also run without launching Rider:
+
+```powershell
+pwsh -NoProfile -File .\build.ps1 ownTimeoutTest registrationSafetyTest
+```
+
+These JVM harnesses call the production helpers. They cover timeout ownership and cancellation, real-path containment, registration failure stages, and retry guidance. Registration fixtures stay under `build/registration-safety-tests`; directory junctions created on Windows are removed individually after each case. These checks do not invoke Rider's Add Existing Item action or simulate a live RD disconnection.
+
+Exact-name search checks use the same backend build and locked SDK:
+
+```powershell
+pwsh -NoProfile -File .\build.ps1 searchNamesTest
+```
+
+They cover the ordinary-name fast path, SDK name values and exact matching for templates, conversion and literal operators, bounded index keys, and syntax/infrastructure failure classification. The isolated harness does not parse special-name fragments in a live C++ module or query Rider's symbol index; those behaviors require runtime validation.
 
 When comparing a local build with a published package, use the plugin version, source revision, and checksums supplied with the release you are using. A different source revision, build configuration, or archive content can produce a different package; do not assume a local rebuild is byte-for-byte identical.
 

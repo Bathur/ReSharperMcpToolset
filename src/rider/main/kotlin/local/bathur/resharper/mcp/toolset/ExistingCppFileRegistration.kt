@@ -4,6 +4,7 @@
 
 package local.bathur.resharper.mcp.toolset
 
+import com.intellij.mcpserver.McpExpectedError
 import com.intellij.mcpserver.mcpFail
 import com.intellij.mcpserver.util.resolveInProject
 import com.intellij.openapi.application.EDT
@@ -45,6 +46,18 @@ internal class ExistingCppFileRegistration(private val project: Project) {
         filePathInput: String,
         projectName: String?,
         timeoutMs: Int,
+    ): JsonObject = withRegistrationFailureContext(
+        failure = { message, cause -> McpExpectedError(message).apply { initCause(cause) } },
+    ) { progress ->
+        registerWithProgress(parentDirectoryInput, filePathInput, projectName, timeoutMs, progress)
+    }
+
+    private suspend fun registerWithProgress(
+        parentDirectoryInput: String,
+        filePathInput: String,
+        projectName: String?,
+        timeoutMs: Int,
+        progress: RegistrationProgress,
     ): JsonObject {
         if (parentDirectoryInput.isBlank()) mcpFail("parent_directory must not be blank")
         if (filePathInput.isBlank()) mcpFail("file_path must not be blank")
@@ -97,9 +110,9 @@ internal class ExistingCppFileRegistration(private val project: Project) {
             )
         }
 
-        val parentDirectory = unresolvedParent.toRealPath(LinkOption.NOFOLLOW_LINKS)
-        val filePath = unresolvedFile.toRealPath(LinkOption.NOFOLLOW_LINKS)
-        if (filePath == parentDirectory || !filePath.startsWith(parentDirectory)) {
+        val paths = ExistingCppRegistrationPaths.resolve(unresolvedParent, unresolvedFile)
+        val (parentDirectory, filePath) = paths
+        if (!paths.isStrictDescendant) {
             return preflightFailure(
                 "unsupported",
                 filePath,
@@ -199,8 +212,7 @@ internal class ExistingCppFileRegistration(private val project: Project) {
 
         val beforeSemantic = querySemanticState(filePath, deadlineNanos)
             ?: mcpFail(
-                "ReSharper C++ add-existing-file preflight timed out after $timeoutMs ms. " +
-                    "No project model modification was attempted."
+                "ReSharper C++ add-existing-file preflight timed out after $timeoutMs ms."
             )
         val before = snapshot(parent, filePath, beforeSemantic)
 
@@ -223,30 +235,32 @@ internal class ExistingCppFileRegistration(private val project: Project) {
 
         val remainingForAdd = remainingMillis(deadlineNanos)
             ?: mcpFail(
-                "ReSharper C++ add-existing-file preflight exhausted timeout_ms before the Rider project model request began. " +
-                    "No project model modification was attempted."
+                "ReSharper C++ add-existing-file preflight exhausted timeout_ms before the Rider project model request began."
             )
         val addCallCompletion = withTimeoutOrNull(remainingForAdd) {
             withContext(Dispatchers.EDT) {
-                AddCallCompletion(
-                    project.solution.projectModelTasks.addItems.startSuspending(
-                        RdAddItemsCommand(
-                            listOf(
-                                RdAddItemData(
-                                    itemLocation = filePath.toRd(),
-                                    parentId = parentId,
-                                    relativeTo = null,
-                                    includeContent = false,
-                                )
-                            )
+                val addItems = project.solution.projectModelTasks.addItems
+                val command = RdAddItemsCommand(
+                    listOf(
+                        RdAddItemData(
+                            itemLocation = filePath.toRd(),
+                            parentId = parentId,
+                            relativeTo = null,
+                            includeContent = false,
                         )
-                    ).items.singleOrNull()
+                    )
                 )
+                progress.stage = RegistrationProgress.Stage.CommitUnknown
+                val result = addItems.startSuspending(command).items.singleOrNull()
+                progress.stage = when (result?.success) {
+                    true -> RegistrationProgress.Stage.Accepted
+                    false -> RegistrationProgress.Stage.Rejected
+                    null -> RegistrationProgress.Stage.CommitUnknown
+                }
+                AddCallCompletion(result)
             }
         } ?: mcpFail(
-            "Rider add-existing-item timed out after $timeoutMs ms before its commit result was known. " +
-                "The project model modification may already have committed. Retry with exactly the same " +
-                "parent_directory, file_path, and project_name; the operation is idempotent and will not add a duplicate item."
+            "Rider add-existing-item did not complete within $timeoutMs ms."
         )
         val addItemResult = addCallCompletion.result
 
@@ -262,7 +276,8 @@ internal class ExistingCppFileRegistration(private val project: Project) {
                 listOf(
                     RegistrationDiagnostic(
                         "missing_add_items_result",
-                        "Rider returned no registration result for the file."
+                        "Rider returned no registration result for the file; its commit result is unknown. " +
+                            SameRegistrationRetry
                     )
                 ),
                 forcedStatus = "unsupported",

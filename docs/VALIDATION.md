@@ -4,7 +4,79 @@ This record describes observed development results for a ReSharper C++ plugin de
 
 The observations below identify the Rider and plugin revisions tested; coverage is limited to the listed environments and scenarios.
 
-## Evidence by version
+## Current release: 0.3.17
+
+The current target is **Windows / Rider 2026.2.2 `RD-262.10315.191`**. Version 0.3.17 retains ten tools and the existing RD protocol. Its scope includes exact template/operator-name lookup, case-sensitive hierarchy identities, corrected operator/concept classification, virtual-only upstream relationships, physical registration containment, and timeout/error-recovery safeguards. Known source-context and symbol-summary gaps remain documented below.
+
+### Static and isolated checks
+
+The development 0.3.17 package completed RD generation, C#/Kotlin compilation, `consumerDiagnosticsTest`, `searchNamesTest`, packaging and configuration checks. Plugin Verifier **1.410** reported **Compatible** against the locked local Rider build, with **0 bytes** downloaded. The exact-build configuration suggestion and optional IDE classpath/Gradle/JBR warnings were retained; success does not mean a warning-free run.
+
+Package inspection confirmed the plugin/backend versions, the exact build bounds, and the required source/license notices. The installed DLL and JAR hashes matched that package. Temporary diagnostic helpers and their test scripts are not part of the release implementation. Removing investigation code restored the same non-diagnostic plugin inputs; it did not implement an external-source fallback or a new EndPlay fix.
+
+The regression checks have distinct scopes:
+
+| Check | What it exercises | What it does not establish |
+| --- | --- | --- |
+| `consumerDiagnosticsTest` | Production classification, omission accounting and relationship selection using isolated locked-SDK objects, including operator/concept kinds and virtual-slot selection | Construction of a real C++ inheritance graph or every live PSI state |
+| `searchNamesTest` | Production ordinary-name paths, actual SDK name values, index keys, exact positive/negative matching, template/operator compatibility and failure classification | Live fragment parsing or whether a particular symbol is present in Rider's index |
+| Existing logging, timeout and registration harnesses | Bounded logging and writer failures; timeout ownership and cancellation; physical-path containment and registration-stage messages | All of these checks rerun as one complete 0.3.17 live-IDE matrix, or real project-model commit faults |
+
+The logging, timeout and registration components had passed their applicable isolated checks during development. Real Windows junction fixtures covered internal/external directory aliases and physical parent identities; this is not evidence of a fresh project registration for every alias shape.
+
+### Exported-source verification
+
+The 55-file public source snapshot was independently built on Windows against the locked Rider installation using .NET SDK 10.0.400. The run used `--rerun-tasks --no-build-cache --offline`, reused downloaded dependency caches and the verified RD model, and executed all 27 scheduled tasks. Model verification, RD generation, C#/Kotlin compilation, all six isolated harnesses listed in the build instructions, packaging, configuration validation and Plugin Verifier passed. The downloader harness repeated its 36 loopback-only cases.
+
+The resulting plugin ZIP was byte-for-byte identical to the installed, accepted 0.3.17 archive. Post-build source verification also confirmed that the exported inputs, including the regenerated RD files, were unchanged. Documentation was then updated with these results and re-exported without another binary rebuild. This validates the tested source/package correspondence; it is not a fresh-machine dependency download test or a repeat of the live C++ semantic matrix. Existing test-source, exact-build, IDE-layout and toolchain warnings were retained.
+
+### Installed name-search acceptance
+
+The 0.3.17 installed acceptance run made **25 read-only calls: 21 search and 4 inspect**. Results were **17 `ok`, 5 expected `not_found`, 2 `partial`, and 1 expected `unsupported`**, with no tool errors or timeouts in that window.
+
+| Case | Observed result |
+| --- | --- |
+| `TIsSigned<int8>` without a preceding inspection | The correct indexed specialization was returned |
+| `TIsContiguousContainer<UE::TSharedString<CharType>>` | The nested qualified template name returned its correct target |
+| Other indexed specializations, absent arguments, wrong namespaces and case differences | Positive cases stayed distinct; the selected negative cases returned no result |
+| Leading global qualifier | Equivalent to the corresponding query without the leading `::` |
+| Bare `TIsSigned` and pagination | Eight indexed family members; pages of 3 + 3 + 2 matched the complete response |
+| Ordinary `IsExperienceLoaded` names | Two short-name candidates, one qualified candidate, and no match for the wrong scope |
+| Literal operator returned QName, short name and C++ spelling | All three forms returned the same `_PrivateASV` target and response |
+| Conversion operator returned QName and `operator bool` spelling | Both returned the same correct `TUniquePtr` target; the overall queries remained partial |
+| Inspection of four returned locations | Template, literal and conversion summaries agreed with their corresponding search entries |
+| An unterminated template name | Explicit `unsupported_name`; no broadened query or false absence claim |
+
+The two conversion queries reported 47 and 35 unresolved index occurrences in that run. Their complete totals remained unknown. Those counts describe a particular index state, not fixed product behavior or a proven number of missing matches for the qualified request. Returning the expected target did not establish uniqueness or completeness, and the broad conversion-index performance limit was not considered solved.
+
+The unsuccessful-call log contained the eight expected non-`ok` responses, with no additional exception or truncation records. The inspected window had no plugin-attributed API/thread-access errors or backend error/fatal entries. Generic watchdog, toolbar and telemetry events were recorded separately; the observations do not establish zero IDE stalls or a warning-free session.
+
+### Other targeted runtime evidence retained by this release
+
+The changes incorporated since 0.3.10 also received selected installed checks during development:
+
+- Case-distinct C++ hierarchy targets remained separate, including direct/indirect distinctions and pagination.
+- Inspection, outline and filtering examples covered operators and concepts alongside ordinary symbol kinds.
+- Upstream relationships excluded non-virtual and overloaded-name hiding. Overrides with and without the `override` keyword, mixed multiple inheritance, nearest ancestors, pure virtual members, covariant returns, class-template members and free functions had representative checks.
+- Physical-path registration checks rejected an external directory alias and a directory target, and preserved already-registered idempotency. An invalid registration timeout produced an explicit not-attempted error with its original cause.
+- Diagnostics position filtering matched the start, interior and end caret positions of a finding, while a position after the end did not match. Returned character ranges remained end-exclusive.
+- Deliberately short query timeouts were followed by successful queries. Caller/inner-scope cancellation classification also has isolated helper coverage.
+
+These selected checks were performed on the relevant development implementations; they were not all repeated against the final 0.3.17 package. Fresh file registration, terminal file symlinks, live RD disconnection/commit races, every overload or macro form, and all cancellation states were not exhaustively exercised. Controlled source fixtures were removed and project state restored. No Unreal Engine or game build or PIE session was launched for these checks.
+
+### Known limitations retained in 0.3.17
+
+Some external C++ source files have a valid primary C++ PSI and a successful file outline, yet the document-based position resolver cannot reach that context and returns `not_indexed / psi_not_available`. The gap concerns source-file/project-file mapping, not a blanket exclusion of third-party directories. Searches for game or Engine symbols can encounter such unresolved index entries before name filtering and remain `partial`. No primary-file declaration fallback is implemented in this release; outline success must not be taken as proof that every returned position can be inspected.
+
+A state-dependent summary inconsistency remains for `UActorComponent::EndPlay` in upstream override queries. The correct member identity was returned, but navigation, declaration/definition counts and signature formatting could differ from direct inspection even with `status: "ok"`. Other runs of the same binary produced the expected summary. The cause remains undetermined; neither restarting nor obtaining a later healthy result is treated as a proven fix.
+
+### Source-build download checks
+
+The source utilities were validated independently of the plugin's installed runtime. A loopback-only HTTP fixture exercised **36 downloader-process cases**, including stored/deflate entries, case-sensitive names, relative/absolute paths, valid ranges without Content-Length, range rejection and length mismatches, truncated/stalled bodies, bounded retries, validator changes, cache integrity/resumption and failed expected size/hash checks. Failed verification preserved the original output. No real Rider distribution was downloaded for these tests.
+
+`verifyRiderModel` accepted the existing locked model and rejected a wrong-size fixture. A same-size modified fixture was also rejected during RD classpath resolution, before code generation. The original SDK model and the installed plugin package stayed unchanged. These checks do not claim general ZIP/ZIP64 support, exhaustive ZIP-comment handling, or support for every HTTP server/proxy behavior.
+
+## Historical evidence before 0.3.17
 
 Versions `0.3.8` and `0.3.9` were local development revisions, not public releases. Their evidence is retained to distinguish intermediate results from the installed `0.3.10` acceptance checks. The public `0.3.10` release incorporates the Rider 2026.2.2 compatibility update and the search and upstream-override fixes since `0.3.7`.
 
@@ -229,6 +301,7 @@ Plugin Verifier **1.410** reported **Compatible** against **`RD-262.10315.191`**
 - Windows and the exact Rider 2026.2.2 build above are the current target; static checks and the representative installed scenarios above have been completed. Earlier Rider results are historical. Other operating systems and arbitrary .NET SDK versions have not been validated.
 - Measured times are observations from selected local queries, not benchmarks, service-level targets, or performance guarantees. Cold Rider computations may be slow; moving a query off the primary thread does not guarantee an entirely hitch-free IDE.
 - Semantic coverage follows Rider's loaded project model, index, PSI contexts, and ability to map physical files. Empty, partial, unsupported, or not-indexed results must be interpreted using the response diagnostics; no text-search fallback is used to simulate semantic success.
+- An available primary-file context does not guarantee that position-based queries can reach it. The external-source routing gap and EndPlay summary inconsistency described for 0.3.17 remain unresolved; a successful status alone is not proof that all metadata or result sets are complete.
 - Diagnostics reflect the current Rider settings and daemon decisions. Stage applicability and cached state can affect findings. The normal Rider daemon policy can include an Unreal/UHT stage; the tool does not promise that every internal stage succeeds or expose a stage-disable switch.
 - Timeout and recovery samples establish the observed scenarios only. The existing-file registration branch for an unknown commit result after a very short timeout was not reproduced in the historical local tests; its conservative same-parameter retry contract remains documented.
 - This record is not a security audit or a promise of ongoing support. The plugin depends on Rider's MCP transport and host process. Nine custom tools provide semantic/diagnostic reads; `add_existing_file` can change the host project model for an existing file.

@@ -138,7 +138,8 @@ private fun diskFailureTests(directory: Path) {
         reported.countDown()
         throw IllegalStateException("Even the reporting callback is allowed to fail")
     })
-    check(writer.tryOffer(sample()))
+    // Startup may fail before the initial offer finishes; either return value is valid.
+    writer.tryOffer(sample())
     check(reported.await(5, TimeUnit.SECONDS))
     eventually { !writer.tryOffer(sample()) }
     check(failures.get() == 1)
@@ -171,7 +172,8 @@ private fun workerErrorTests() {
             reported.countDown()
         },
     )
-    check(writer.tryOffer(sample()))
+    // Startup may fail before the initial offer finishes; either return value is valid.
+    writer.tryOffer(sample())
     check(reported.await(5, TimeUnit.SECONDS))
     eventually { !writer.canAccept() }
     check(!writer.tryOffer(sample()))
