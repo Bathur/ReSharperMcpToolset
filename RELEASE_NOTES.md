@@ -1,5 +1,16 @@
 # Release notes
 
+## 0.3.20
+
+This compatibility update targets **Windows / Rider 2026.2.3.1 `RD-262.10968.170`**. Both the minimum and maximum Rider build are pinned to that exact target; earlier Rider builds require the corresponding earlier plugin package.
+
+- Updates the Rider build restriction and the matching RD model input and integrity lock.
+- Retains the 0.3.17 semantic implementation, ten tool contracts, generated protocol sources, and build-tool versions.
+
+RD generation, C#/Kotlin compilation, packaging, configuration validation, five isolated plugin regression harnesses, and Plugin Verifier passed against the new target during the compatibility upgrade. Installed DLL/JAR hashes and loaded version were confirmed; a direct MCP handshake and tool listing returned all ten custom tools.
+
+C++ semantic queries were not rerun on this Rider build. This release's preparation reuses that verified binary and does not include an independent rebuild of the exported source snapshot. Earlier semantic observations remain tied to their recorded plugin and Rider versions. Conversion-query completeness, external-source position mapping, and state-dependent upstream `EndPlay` summaries remain known limits. See the [validation record](docs/VALIDATION.md) for scope and evidence.
+
 ## 0.3.17
 
 This release incorporates the changes since the public `0.3.10` release. The target remains **Windows / Rider 2026.2.2 `RD-262.10315.191`**, with the same ten tools and response schemas.

@@ -4,9 +4,21 @@ This record describes observed development results for a ReSharper C++ plugin de
 
 The observations below identify the Rider and plugin revisions tested; coverage is limited to the listed environments and scenarios.
 
-## Current release: 0.3.17
+## Current release: 0.3.20
 
-The current target is **Windows / Rider 2026.2.2 `RD-262.10315.191`**. Version 0.3.17 retains ten tools and the existing RD protocol. Its scope includes exact template/operator-name lookup, case-sensitive hierarchy identities, corrected operator/concept classification, virtual-only upstream relationships, physical registration containment, and timeout/error-recovery safeguards. Known source-context and symbol-summary gaps remain documented below.
+Version 0.3.20 targets **Windows / Rider 2026.2.3.1 `RD-262.10968.170`**. It updates the exact Rider bounds and matching RD model while preserving the 0.3.17 semantic implementation, ten tools and protocol source. The toolchain versions remain unchanged.
+
+On 2026-10-02, model verification, forced RD generation and C#/Kotlin compilation passed against the installed target; generated protocol files were unchanged. Packaging, configuration validation and all five plugin regression harnesses (`consumerDiagnosticsTest`, `searchNamesTest`, `failureLogTest`, `ownTimeoutTest`, `registrationSafetyTest`) passed. Plugin Verifier **1.410** reported **Compatible**, with **0 bytes downloaded during verification**. The earlier packaging step restored a missing target-specific compiler helper online, so the complete upgrade was not download-free. Exact-build, optional IDE layout, test-source and toolchain warnings remain.
+
+Package inspection confirmed version 0.3.20, exact build bounds, backend 0.3.20.0, Java 25 bytecode and source/license notices, with no backend PDB, host DLLs or test classes. The local new-model lock was first established from the official HTTPS archive with strong-ETag, entry-size/CRC and JAR checks, then independently retrieved with the unchanged production helper; its hash is not a JetBrains-published digest.
+
+Installed DLL/JAR sizes and hashes matched the verified package. Frontend/backend logs and the loaded backend module confirmed 0.3.20. A direct HTTP MCP initialization and tool listing succeeded and returned all ten custom tools. The existing Codex session had not rediscovered Rider's native MCP tools; this direct connection check does not establish native-client integration or C++ query behavior.
+
+C++ semantic regression on the new Rider target was explicitly skipped for this release. The public source was exported from the matching development inputs without another build or regression run. Export and archive checks establish the selected file set and byte correspondence; they are not an independent rebuild of the exported snapshot. The 0.3.17 and older observations below remain evidence for their recorded binaries and Rider builds. Source-context routing, conversion-query completeness/performance and state-dependent EndPlay summaries remain known limitations. No full semantic matrix, fresh registration, live cancellation faults or empty-cache source build is claimed for this compatibility update.
+
+## Previous accepted baseline: 0.3.17
+
+Its verified target was **Windows / Rider 2026.2.2 `RD-262.10315.191`**. Version 0.3.17 retains ten tools and the existing RD protocol. Its scope includes exact template/operator-name lookup, case-sensitive hierarchy identities, corrected operator/concept classification, virtual-only upstream relationships, physical registration containment, and timeout/error-recovery safeguards. Known source-context and symbol-summary gaps remain documented below.
 
 ### Static and isolated checks
 
@@ -298,7 +310,7 @@ Plugin Verifier **1.410** reported **Compatible** against **`RD-262.10315.191`**
 
 ## Interpretation and limits
 
-- Windows and the exact Rider 2026.2.2 build above are the current target; static checks and the representative installed scenarios above have been completed. Earlier Rider results are historical. Other operating systems and arbitrary .NET SDK versions have not been validated.
+- Windows and Rider 2026.2.3.1 `RD-262.10968.170` are the current target. Static and isolated checks, installation/loading confirmation, and a direct MCP connection check completed for 0.3.20; C++ semantic regression on this target was skipped. Earlier installed semantic scenarios remain historical evidence for their stated Rider/plugin versions. Other operating systems and arbitrary .NET SDK versions have not been validated.
 - Measured times are observations from selected local queries, not benchmarks, service-level targets, or performance guarantees. Cold Rider computations may be slow; moving a query off the primary thread does not guarantee an entirely hitch-free IDE.
 - Semantic coverage follows Rider's loaded project model, index, PSI contexts, and ability to map physical files. Empty, partial, unsupported, or not-indexed results must be interpreted using the response diagnostics; no text-search fallback is used to simulate semantic success.
 - An available primary-file context does not guarantee that position-based queries can reach it. The external-source routing gap and EndPlay summary inconsistency described for 0.3.17 remain unresolved; a successful status alone is not proof that all metadata or result sets are complete.
