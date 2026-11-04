@@ -1,5 +1,19 @@
 # Release notes
 
+## 0.3.21
+
+This compatibility update targets **Windows / Rider 2026.2.4.1 `RD-262.11879.119`**. Both Rider build bounds are pinned to this exact target; earlier Rider builds require their matching earlier plugin package.
+
+- Updates the exact Rider build restriction and the matching SDK distribution URI in the RD model lock. The model content, size and SHA-256 are unchanged from 0.3.20.
+- Retains the 0.3.17 semantic implementation, ten tool contracts, generated protocol sources, and build-tool versions.
+- Updates the build requirements and validation record for the new target.
+
+RD generation, C#/Kotlin compilation, packaging, configuration validation, five isolated plugin regression harnesses, and Plugin Verifier 1.411 **Compatible** passed during the upgrade. Installed DLL/JAR hashes and the loaded version matched the verified package. Eight read-only calls covered seven representative scenarios plus an EndPlay inspection comparison: search, ordinary inspection, references, outline, direct base types and diagnostics behaved as expected.
+
+The 55-file public source snapshot was independently rebuilt with all 27 scheduled tasks and six isolated harnesses passing, including 36 downloader cases. Its plugin ZIP was byte-for-byte identical to the installed package. This source build reused existing dependency caches and the verified model.
+
+The upstream EndPlay relationship was correct, while its signature, navigation and declaration count differed from direct inspection, reproducing the previously documented summary limitation. This issue remains unresolved. Conversion-query completeness and some external-source position mappings also remain known limits. See the [validation record](docs/VALIDATION.md) for the evidence and unperformed checks.
+
 ## 0.3.20
 
 This compatibility update targets **Windows / Rider 2026.2.3.1 `RD-262.10968.170`**. Both the minimum and maximum Rider build are pinned to that exact target; earlier Rider builds require the corresponding earlier plugin package.

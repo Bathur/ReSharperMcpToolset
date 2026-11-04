@@ -4,7 +4,44 @@ This record describes observed development results for a ReSharper C++ plugin de
 
 The observations below identify the Rider and plugin revisions tested; coverage is limited to the listed environments and scenarios.
 
-## Current release: 0.3.20
+## Current release: 0.3.21
+
+Version 0.3.21 targets **Windows / Rider 2026.2.4.1 `RD-262.11879.119`**. It changes the exact Rider bounds and the matching SDK distribution URI, preserving the 0.3.17 semantic implementation, ten tool contracts, RD source and generated files. The model extracted from the official 2026.2.4.1 SDK matched the previous locked size and SHA-256; additional strong-ETag, entry-CRC and JAR checks passed. The active model did not need replacement.
+
+### Static and package checks
+
+On 2026-11-04, forced model verification, RD generation and C#/Kotlin compilation passed using the installed Rider's JBR 25.0.4.1 and .NET SDK 10.0.401. Packaging, configuration validation and all five plugin regression harnesses (`consumerDiagnosticsTest`, `searchNamesTest`, `failureLogTest`, `ownTimeoutTest`, `registrationSafetyTest`) passed. Plugin Verifier **1.411** reported **Compatible** against the single locked local target; its run downloaded **424.39 MB** of plugins and dependencies. The complete Rider archive was not downloaded. Exact-build, optional IDE-layout, test-source and toolchain warnings remain.
+
+Package checks confirmed plugin version 0.3.21, exact Rider bounds, backend 0.3.21.0, all 122 packaged classes targeting Java 25, and the required source/license notices. The ZIP contained no backend PDB, host DLLs or test classes. Installed DLL/JAR sizes and hashes matched the package; frontend/backend logs and the loaded backend module confirmed this version.
+
+### Exported-source verification
+
+The 55-file public source snapshot was independently built through its own build entry point with `--rerun-tasks --no-build-cache --offline`, using the same installed Rider and .NET SDK 10.0.401. It reused downloaded dependencies through `-CacheRoot` and read the locked model from the existing cache; project state and build outputs belonged to the snapshot. All **27 scheduled tasks executed and passed**: model verification, RD generation, C#/Kotlin compilation, packaging, configuration checks, all six isolated harnesses and Plugin Verifier. The downloader harness passed its **36 loopback-only cases**, using an existing Python 3.12.14 runtime selected with the documented option.
+
+Plugin Verifier **1.411** reported **Compatible** against the exact target, with **0 bytes downloaded in this verification run**. The independently rebuilt plugin ZIP was byte-for-byte identical to the installed package exercised below. Export verification confirmed that all 55 source inputs, including regenerated protocol files, remained unchanged after the build. Only documentation was then updated with these results and re-exported, without another binary rebuild. These checks establish the tested source/package correspondence; they are not an empty-cache first build or a repeat of the live semantic matrix.
+
+### Installed representative regression
+
+Codex discovered all ten custom tools. Eight read-only calls covered seven existing scenarios and one additional EndPlay inspection comparison. Every tool returned `ok`, query-level diagnostics were empty, and all paged responses had no skipped results or additional pages. Semantic expectations were checked separately from those statuses:
+
+| Scenario | Observed result |
+| --- | --- |
+| Exact `IsExperienceLoaded` search | Two candidates |
+| Inspection of the selected returned navigation | Canonical identity, signature, navigation and declaration/definition counts matched the search summary |
+| Direct references to that member | Twelve unique mapped locations; three returned calls were in project files added after the earlier nine-reference baseline |
+| `LyraExperienceManagerComponent.h` outline | 37 items, normalized English kinds, hierarchy, constructor, and no namespace signature |
+| Component direct bases | `UGameStateComponent` and `ILoadingProcessInterface` |
+| Component EndPlay upstream member | Correct `UActorComponent::EndPlay` identity and direct relationship; summary consistency failed as described below |
+| ShooterCore diagnostics | The same four warnings at lines 9, 15, 171 and 213; 1,588 raw highlightings, 1,584 below the severity filter, and no mapping/metadata omissions |
+| Additional inspection of the upstream return location | Canonical `void(EEndPlayReason::Type)`, one declaration and one definition, with the Engine definition as preferred navigation |
+
+The upstream query returned the known EndPlay summary discrepancy: a header navigation, zero declarations/one definition, and a signature containing the parameter name. Inspection at that returned position produced the canonical definition navigation and one declaration/one definition. Signature, navigation and declaration count differed. This reproduces an existing unresolved limitation; a correct relationship and an `ok` status do not establish metadata equivalence. The run does not determine its cause or establish that the Rider update introduced it.
+
+Frontend logs corresponded to all eight calls. The inspected window had no plugin API/thread-access exception, backend error/fatal entry, watchdog or new unsuccessful-call record. A verbose unresolved-symbol entry overlapped the upstream query; it was retained as an observation without assigning a cause. Existing Unreal Editor connection polling, a missing-launcher-file warning and an earlier toolbar event were recorded separately. Project Git status stayed clean, and no source files, project items, build or PIE session were changed or started for this regression.
+
+These checks do not repeat the full semantic/performance matrix, downstream inheritance/overrides, pagination, deliberate timeout/cancellation, fresh registration or special-name cases. External-source position mapping, conversion-query completeness/performance and EndPlay summary consistency remain known limits.
+
+## Previous compatibility release: 0.3.20
 
 Version 0.3.20 targets **Windows / Rider 2026.2.3.1 `RD-262.10968.170`**. It updates the exact Rider bounds and matching RD model while preserving the 0.3.17 semantic implementation, ten tools and protocol source. The toolchain versions remain unchanged.
 
@@ -14,7 +51,7 @@ Package inspection confirmed version 0.3.20, exact build bounds, backend 0.3.20.
 
 Installed DLL/JAR sizes and hashes matched the verified package. Frontend/backend logs and the loaded backend module confirmed 0.3.20. A direct HTTP MCP initialization and tool listing succeeded and returned all ten custom tools. The existing Codex session had not rediscovered Rider's native MCP tools; this direct connection check does not establish native-client integration or C++ query behavior.
 
-C++ semantic regression on the new Rider target was explicitly skipped for this release. The public source was exported from the matching development inputs without another build or regression run. Export and archive checks establish the selected file set and byte correspondence; they are not an independent rebuild of the exported snapshot. The 0.3.17 and older observations below remain evidence for their recorded binaries and Rider builds. Source-context routing, conversion-query completeness/performance and state-dependent EndPlay summaries remain known limitations. No full semantic matrix, fresh registration, live cancellation faults or empty-cache source build is claimed for this compatibility update.
+The 2026-10-02 release preparation explicitly skipped C++ semantic regression. The public source was exported from the matching development inputs without another build or regression run. Export and archive checks establish the selected file set and byte correspondence; they are not an independent rebuild of that exported snapshot. A subsequent 2026-10-03 run made seven native read-only calls on the same installed package: two search candidates, matching inspection, nine references, 37 outline items, two bases, a canonical EndPlay upstream member and four existing warnings were observed. All seven returned `ok` with empty query diagnostics and no skipped results. That healthy EndPlay sample did not prove the state-dependent limitation fixed. No full semantic matrix, fresh registration, live cancellation faults or empty-cache source build was claimed for that version.
 
 ## Previous accepted baseline: 0.3.17
 
@@ -310,7 +347,7 @@ Plugin Verifier **1.410** reported **Compatible** against **`RD-262.10315.191`**
 
 ## Interpretation and limits
 
-- Windows and Rider 2026.2.3.1 `RD-262.10968.170` are the current target. Static and isolated checks, installation/loading confirmation, and a direct MCP connection check completed for 0.3.20; C++ semantic regression on this target was skipped. Earlier installed semantic scenarios remain historical evidence for their stated Rider/plugin versions. Other operating systems and arbitrary .NET SDK versions have not been validated.
+- Windows and Rider 2026.2.4.1 `RD-262.11879.119` are the current target. Version 0.3.21 completed static and isolated checks, installed-version binding and the representative runtime scenarios above, including a recurrence of the known EndPlay summary limitation. Earlier scenarios remain historical evidence for their stated Rider/plugin versions. Other operating systems and arbitrary .NET SDK versions have not been validated.
 - Measured times are observations from selected local queries, not benchmarks, service-level targets, or performance guarantees. Cold Rider computations may be slow; moving a query off the primary thread does not guarantee an entirely hitch-free IDE.
 - Semantic coverage follows Rider's loaded project model, index, PSI contexts, and ability to map physical files. Empty, partial, unsupported, or not-indexed results must be interpreted using the response diagnostics; no text-search fallback is used to simulate semantic success.
 - An available primary-file context does not guarantee that position-based queries can reach it. The external-source routing gap and EndPlay summary inconsistency described for 0.3.17 remain unresolved; a successful status alone is not proof that all metadata or result sets are complete.
