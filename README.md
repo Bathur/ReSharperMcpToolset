@@ -4,7 +4,7 @@
 
 ReSharper MCP Toolset brings ReSharper C++ semantic capabilities to AI assistants through JetBrains Rider's built-in MCP server. Designed around Unreal Engine C++ development workflows, it lets an assistant inspect symbols, trace references, explore inheritance and overrides, read declaration outlines, and query C++ diagnostics in the context of your loaded project.
 
-Version **0.3.21** targets **Windows / Rider 2026.2.4.1 `RD-262.11879.119`**. It updates the locked Rider target and matching SDK input location while retaining the 0.3.17 semantic implementation and ten tool contracts. The RD model content is unchanged from 0.3.20. See the [release notes](RELEASE_NOTES.md) for this compatibility update and the [validation record](docs/VALIDATION.md) for the checks performed.
+Version **0.3.22** targets **Windows / Rider 2026.3 `RD-263.7307.258`**. It updates the locked Rider target and RD model, and adds focused ZIP64 support to the SDK extraction helper. The 0.3.17 semantic implementation, ten tool contracts and build-tool versions are retained; no plugin API adaptation was required. See the [release notes](RELEASE_NOTES.md) for this compatibility update and the [validation record](docs/VALIDATION.md) for the checks performed.
 
 It runs inside Rider and uses the same ReSharper C++ project model and semantic infrastructure that power the IDE. Game modules, GameFeature plugins, Engine source, templates, and Unreal reflection macros shaped its design and validation. This is a Rider plugin; it does not need to be installed in your Unreal project.
 
@@ -31,7 +31,7 @@ For parameters, response fields, and troubleshooting details, see the [tool refe
 
 ## Requirements
 
-- **Windows and JetBrains Rider 2026.2.4.1, build `RD-262.11879.119`.** This is the only current build target. Installed runtime checks and their limits are recorded separately in the validation record. Other Rider builds and operating systems have not been qualified for this version.
+- **Windows and JetBrains Rider 2026.3, build `RD-263.7307.258`.** This is the only current build target. Installed runtime checks and their limits are recorded separately in the validation record. Other Rider builds and operating systems have not been qualified for this version.
 - Rider's C++ support and bundled MCP Server plugin enabled.
 - A project or solution loaded in Rider, with the relevant C++ files registered and indexed. Engine and library queries require those sources to be known to Rider.
 - An MCP client connected to Rider. Runtime validation has used Codex; other clients have not been independently validated by this project.

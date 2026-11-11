@@ -233,6 +233,32 @@ try {
     Configure-Fixture 'damaged' -Archive 'damaged'
     $null = Invoke-DownloadCase 'damaged' -Archive 'damaged' -Expect failure
 
+    foreach ($archive in @('zip64_wide_offset', 'zip64_wide_compressed_offset', 'zip64_all_fields', 'zip64_count_only')) {
+        Configure-Fixture $archive -Archive $archive
+        $zip64 = Invoke-DownloadCase $archive -Archive $archive -CachePath 'central.bin'
+        $zip64Gets = @($zip64.requests | Where-Object method -eq 'GET')
+        if (($zip64Gets | Measure-Object -Property sent -Sum).Sum -gt 200000) {
+            throw "ZIP64 fixture '$archive' must not require a large archive download."
+        }
+        if ($archive -like 'zip64_wide_*' -and
+            @($zip64Gets | Where-Object { $_.range -match '^bytes=([0-9]+)-' -and [long]$Matches[1] -gt [uint32]::MaxValue }).Count -eq 0) {
+            throw "ZIP64 fixture '$archive' did not exercise HTTP offsets above UInt32.MaxValue."
+        }
+    }
+    foreach ($fault in @(
+        'missing_locator', 'locator_multidisk', 'locator_outside', 'locator_overflow',
+        'short_record', 'record_overflow', 'record_multidisk', 'count_mismatch',
+        'central_outside', 'central_overflow', 'central_oversized', 'missing_extra',
+        'truncated_extra', 'duplicate_extra', 'extra_overflow', 'local_outside', 'entry_multidisk'
+    )) {
+        $archive = 'zip64_' + $fault
+        Configure-Fixture $archive -Archive $archive
+        $zip64 = Invoke-DownloadCase $archive -Archive $archive -Expect failure -Attempts 1
+        if (($zip64.requests | Where-Object method -eq 'GET' | Measure-Object -Property sent -Sum).Sum -gt 200000) {
+            throw "Rejected ZIP64 metadata '$archive' must not trigger a large download."
+        }
+    }
+
     $lockedCache = Join-Path $testRoot 'preexisting-lock-central.bin'
     $existingLock = "$lockedCache.lock"
     [IO.File]::WriteAllBytes($existingLock, $sentinel)

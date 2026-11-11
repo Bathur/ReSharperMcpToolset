@@ -1,5 +1,20 @@
 # Release notes
 
+## 0.3.22
+
+This compatibility update targets **Windows / Rider 2026.3 `RD-263.7307.258`**. Both Rider build bounds are pinned to this exact target; earlier Rider builds require their matching earlier plugin package.
+
+- Updates the exact Rider build restriction and matching RD model input and integrity lock.
+- Adds focused single-disk ZIP64 V1 support to the SDK extraction helper, including 64-bit directory offsets and entry extended fields. Bounded Range reads, source-bound caches, expected size/SHA-256 checks and verified output replacement remain in place; complete SDK downloads, split archives and ZIP64 V2 are not supported.
+- Expands the loopback-only downloader checks from 36 to 57 cases, including sparse archives with offsets above 4 GiB and malformed-metadata rejection.
+- Retains the 0.3.17 semantic implementation, ten tool contracts, generated protocol sources, and build-tool versions. No plugin API adaptation was required.
+
+RD generation, C#/Kotlin compilation, packaging, configuration validation, five isolated plugin regression harnesses, the 57 downloader cases, and Plugin Verifier 1.411 **Compatible** passed during the upgrade. Installed DLL/JAR hashes and the loaded version matched the verified package. Seven read-only calls passed the representative search, inspection, reference, outline, direct-base, upstream-override and diagnostic checks.
+
+The 55-file public source snapshot was independently rebuilt with all 27 scheduled tasks and six isolated harnesses passing, including 57 downloader cases. Its plugin ZIP was byte-for-byte identical to the installed package. This source build reused existing dependency caches, the verified model and Python 3.12.11; it was not an empty-cache first build or another live semantic regression. Only documentation was updated afterward, without another binary rebuild.
+
+EndPlay returned the canonical summary in this run; this does not establish that the state-dependent summary limitation is fixed. Conversion-query completeness and some external-source position mappings also remain known limits. Generic Rider thread-pool and short RD watchdog warnings were observed without an established cause. See the [validation record](docs/VALIDATION.md) for the evidence and unperformed checks.
+
 ## 0.3.21
 
 This compatibility update targets **Windows / Rider 2026.2.4.1 `RD-262.11879.119`**. Both Rider build bounds are pinned to this exact target; earlier Rider builds require their matching earlier plugin package.

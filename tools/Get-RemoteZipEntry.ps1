@@ -372,6 +372,15 @@ function Find-SignatureBackward {
     return -1
 }
 
+function Read-Zip64Int64 {
+    param([byte[]] $Bytes, [int] $Offset)
+    $value = [BitConverter]::ToUInt64($Bytes, $Offset)
+    if ($value -gt [ulong][long]::MaxValue) {
+        throw "ZIP64 value exceeds the supported Int64 range."
+    }
+    return [long]$value
+}
+
 try {
     # Resolve/check destinations and create the private staging file before networking.
     $outputDirectory = [IO.Path]::GetDirectoryName($resolvedOutput)
@@ -424,11 +433,76 @@ try {
         throw "ZIP end-of-central-directory record was not found."
     }
     if ($eocdIndex + 22 -gt $tail.Length) { throw "Truncated ZIP end-of-central-directory record." }
+    if ($eocdIndex + 22 + [BitConverter]::ToUInt16($tail, $eocdIndex + 20) -ne $tail.Length) {
+        throw "ZIP end-of-central-directory comment length is inconsistent."
+    }
+    if ([BitConverter]::ToUInt16($tail, $eocdIndex + 4) -ne 0 -or
+        [BitConverter]::ToUInt16($tail, $eocdIndex + 6) -ne 0) {
+        throw "Multi-disk ZIP archives are not supported."
+    }
 
-    $centralDirectorySize = [BitConverter]::ToUInt32($tail, $eocdIndex + 12)
-    $centralDirectoryOffset = [BitConverter]::ToUInt32($tail, $eocdIndex + 16)
-    if ($centralDirectorySize -eq [uint32]::MaxValue -or $centralDirectoryOffset -eq [uint32]::MaxValue) {
-        throw "ZIP64 archives are not supported by this focused downloader."
+    $entriesOnDisk16 = [BitConverter]::ToUInt16($tail, $eocdIndex + 8)
+    $totalEntries16 = [BitConverter]::ToUInt16($tail, $eocdIndex + 10)
+    $centralDirectorySize32 = [BitConverter]::ToUInt32($tail, $eocdIndex + 12)
+    $centralDirectoryOffset32 = [BitConverter]::ToUInt32($tail, $eocdIndex + 16)
+    $centralDirectorySize = [long]$centralDirectorySize32
+    $centralDirectoryOffset = [long]$centralDirectoryOffset32
+    $centralDirectoryBoundary = $tailStart + $eocdIndex
+    $requiresZip64 = $centralDirectorySize32 -eq [uint32]::MaxValue -or
+        $centralDirectoryOffset32 -eq [uint32]::MaxValue -or
+        $entriesOnDisk16 -eq [uint16]::MaxValue -or $totalEntries16 -eq [uint16]::MaxValue
+    $hasZip64Locator = $eocdIndex -ge 20 -and
+        [BitConverter]::ToUInt32($tail, $eocdIndex - 20) -eq 0x07064B50
+    if ($requiresZip64 -or $hasZip64Locator) {
+        # PKWARE APPNOTE 4.3.14-16: fetch only the locator and fixed V1 record,
+        # never the archive body or an unbounded extensible-data sector.
+        $locatorOffset = $centralDirectoryBoundary - 20
+        if ($locatorOffset -lt 0) { throw "Missing ZIP64 end-of-central-directory locator." }
+        $locator = Get-RemoteRange -Start $locatorOffset -End ($locatorOffset + 19)
+        if ([BitConverter]::ToUInt32($locator, 0) -ne 0x07064B50) {
+            throw "Missing ZIP64 end-of-central-directory locator."
+        }
+        if ([BitConverter]::ToUInt32($locator, 4) -ne 0 -or
+            [BitConverter]::ToUInt32($locator, 16) -ne 1) {
+            throw "Multi-disk ZIP64 archives are not supported."
+        }
+        $zip64Offset = Read-Zip64Int64 $locator 8
+        if ($zip64Offset -gt $locatorOffset - 56) { throw "ZIP64 end record is outside its declared range." }
+        $zip64 = Get-RemoteRange -Start $zip64Offset -End ($zip64Offset + 55)
+        if ([BitConverter]::ToUInt32($zip64, 0) -ne 0x06064B50) {
+            throw "Invalid ZIP64 end-of-central-directory record."
+        }
+        $zip64RecordSize = Read-Zip64Int64 $zip64 4
+        if ($zip64RecordSize -lt 44 -or $zip64RecordSize -ne $locatorOffset - $zip64Offset - 12) {
+            throw "ZIP64 end record length is inconsistent with its locator."
+        }
+        if ([BitConverter]::ToUInt16($zip64, 14) -gt 45) {
+            throw "Only the unencrypted ZIP64 V1 end record is supported."
+        }
+        if ([BitConverter]::ToUInt32($zip64, 16) -ne 0 -or
+            [BitConverter]::ToUInt32($zip64, 20) -ne 0) {
+            throw "Multi-disk ZIP64 archives are not supported."
+        }
+        $entriesOnDisk64 = Read-Zip64Int64 $zip64 24
+        $totalEntries64 = Read-Zip64Int64 $zip64 32
+        $centralDirectorySize = Read-Zip64Int64 $zip64 40
+        $centralDirectoryOffset = Read-Zip64Int64 $zip64 48
+        if ($entriesOnDisk64 -ne $totalEntries64 -or
+            ($entriesOnDisk16 -ne [uint16]::MaxValue -and $entriesOnDisk16 -ne $entriesOnDisk64) -or
+            ($totalEntries16 -ne [uint16]::MaxValue -and $totalEntries16 -ne $totalEntries64) -or
+            ($centralDirectorySize32 -ne [uint32]::MaxValue -and $centralDirectorySize32 -ne $centralDirectorySize) -or
+            ($centralDirectoryOffset32 -ne [uint32]::MaxValue -and $centralDirectoryOffset32 -ne $centralDirectoryOffset)) {
+            throw "Classic and ZIP64 end-of-central-directory fields disagree."
+        }
+        $centralDirectoryBoundary = $zip64Offset
+    }
+    elseif ($entriesOnDisk16 -ne $totalEntries16) {
+        throw "Multi-disk ZIP archives are not supported."
+    }
+    if ($centralDirectorySize -gt [int]::MaxValue -or
+        $centralDirectoryOffset -gt $centralDirectoryBoundary -or
+        $centralDirectorySize -gt $centralDirectoryBoundary - $centralDirectoryOffset) {
+        throw "Central directory is outside the supported archive range."
     }
 
     if ([string]::IsNullOrWhiteSpace($CentralDirectoryCachePath)) {
@@ -458,6 +532,7 @@ try {
         $nameLength = [BitConverter]::ToUInt16($centralDirectory, $offset + 28)
         $extraLength = [BitConverter]::ToUInt16($centralDirectory, $offset + 30)
         $commentLength = [BitConverter]::ToUInt16($centralDirectory, $offset + 32)
+        $diskStart16 = [BitConverter]::ToUInt16($centralDirectory, $offset + 34)
         $localHeaderOffset32 = [BitConverter]::ToUInt32($centralDirectory, $offset + 42)
         if (46L + $nameLength + $extraLength + $commentLength -gt $centralDirectory.Length - $offset) {
             throw "Central-directory variable fields extend beyond the cached range."
@@ -468,10 +543,11 @@ try {
             $compressedSize = [long]$compressedSize32
             $uncompressedSize = [long]$uncompressedSize32
             $localHeaderOffset = [long]$localHeaderOffset32
+            $diskStart = [long]$diskStart16
 
             if ($compressedSize32 -eq [uint32]::MaxValue -or
                 $uncompressedSize32 -eq [uint32]::MaxValue -or
-                $localHeaderOffset32 -eq [uint32]::MaxValue) {
+                $localHeaderOffset32 -eq [uint32]::MaxValue -or $diskStart16 -eq [uint16]::MaxValue) {
                 $extraOffset = $offset + 46 + $nameLength
                 $extraCursor = 0
                 $zip64DataOffset = -1
@@ -482,9 +558,9 @@ try {
                     $dataSize = [BitConverter]::ToUInt16($centralDirectory, $extraOffset + $extraCursor + 2)
                     if ($dataSize -gt $extraLength - $extraCursor - 4) { throw "ZIP extra field exceeds its declared range." }
                     if ($headerId -eq 0x0001) {
+                        if ($zip64DataOffset -ge 0) { throw "Duplicate ZIP64 extra field for '$EntryName'." }
                         $zip64DataOffset = $extraOffset + $extraCursor + 4
                         $zip64DataSize = $dataSize
-                        break
                     }
                     $extraCursor += 4 + $dataSize
                 }
@@ -499,23 +575,31 @@ try {
                     if ($valueOffset + 8 -gt $zip64End) {
                         throw "ZIP64 extra field is missing the uncompressed size for '$EntryName'."
                     }
-                    $uncompressedSize = [long][BitConverter]::ToUInt64($centralDirectory, $valueOffset)
+                    $uncompressedSize = Read-Zip64Int64 $centralDirectory $valueOffset
                     $valueOffset += 8
                 }
                 if ($compressedSize32 -eq [uint32]::MaxValue) {
                     if ($valueOffset + 8 -gt $zip64End) {
                         throw "ZIP64 extra field is missing the compressed size for '$EntryName'."
                     }
-                    $compressedSize = [long][BitConverter]::ToUInt64($centralDirectory, $valueOffset)
+                    $compressedSize = Read-Zip64Int64 $centralDirectory $valueOffset
                     $valueOffset += 8
                 }
                 if ($localHeaderOffset32 -eq [uint32]::MaxValue) {
                     if ($valueOffset + 8 -gt $zip64End) {
                         throw "ZIP64 extra field is missing the local-header offset for '$EntryName'."
                     }
-                    $localHeaderOffset = [long][BitConverter]::ToUInt64($centralDirectory, $valueOffset)
+                    $localHeaderOffset = Read-Zip64Int64 $centralDirectory $valueOffset
+                    $valueOffset += 8
+                }
+                if ($diskStart16 -eq [uint16]::MaxValue) {
+                    if ($valueOffset + 4 -gt $zip64End) {
+                        throw "ZIP64 extra field is missing the disk start for '$EntryName'."
+                    }
+                    $diskStart = [BitConverter]::ToUInt32($centralDirectory, $valueOffset)
                 }
             }
+            if ($diskStart -ne 0) { throw "Multi-disk ZIP entries are not supported." }
 
             $entry = [pscustomobject]@{
                 Flags = $entryFlags
@@ -541,6 +625,10 @@ try {
     if ($entry.CompressionMethod -eq 0 -and $entry.CompressedSize -ne $ExpectedSize) {
         throw "Stored ZIP entry has inconsistent sizes."
     }
+    if ($entry.LocalHeaderOffset -gt $centralDirectoryOffset - 30 -or
+        $entry.CompressedSize -gt [int]::MaxValue) {
+        throw "ZIP entry exceeds the supported archive range."
+    }
 
     $localHeader = Get-RemoteRange `
         -Start $entry.LocalHeaderOffset `
@@ -561,6 +649,10 @@ try {
         throw "Local ZIP header does not name the requested entry '$EntryName'."
     }
     $dataOffset = $entry.LocalHeaderOffset + 30 + $localNameLength + $localExtraLength
+    if ($dataOffset -gt $centralDirectoryOffset -or
+        $entry.CompressedSize -gt $centralDirectoryOffset - $dataOffset) {
+        throw "ZIP entry data overlaps the central directory."
+    }
     $compressed = Get-RemoteRange `
         -Start $dataOffset `
         -End ($dataOffset + $entry.CompressedSize - 1)

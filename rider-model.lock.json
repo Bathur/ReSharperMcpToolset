@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "riderBuild": "262.11879.119",
-  "uri": "https://d2cico3c979uwg.cloudfront.net/com/jetbrains/intellij/rider/riderRD/2026.2.4.1/riderRD-2026.2.4.1.zip",
+  "riderBuild": "263.7307.258",
+  "uri": "https://d2cico3c979uwg.cloudfront.net/com/jetbrains/intellij/rider/riderRD/2026.3/riderRD-2026.3.zip",
   "entryName": "lib/rd/rider-model.jar",
-  "size": 3243012,
-  "sha256": "5D9FE436A0EC675E9AD7E300A054B7B51FB66B00B3FFF2B182C2893539B6D2DC"
+  "size": 3303457,
+  "sha256": "1DA5BD5CEDB2BB280F78C09762C7DFEE85CC84B4093FA9D6D056C628C1B3907D"
 }

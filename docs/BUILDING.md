@@ -6,8 +6,8 @@ This plugin exposes ReSharper C++ services through Rider's built-in MCP server. 
 
 - Windows. The build entry point currently selects Rider's `jbr/bin/java.exe` and uses Windows paths for the backend. Other operating systems have not been validated.
 - PowerShell 7, available as `pwsh`.
-- An installed JetBrains Rider **2026.2.4.1**, build **`RD-262.11879.119`**. The build checks the installation's `build.txt` and rejects a different build.
-- The JBR/JDK supplied with that Rider installation. The verified installation uses JBR **25.0.4.1+1-b508.41**; Java and Kotlin compilation target Java **25**.
+- An installed JetBrains Rider **2026.3**, build **`RD-263.7307.258`**. The build checks the installation's `build.txt` and rejects a different build.
+- The JBR/JDK supplied with that Rider installation. The verified installation uses JBR **25.0.4.1+1-b635.79**; Java and Kotlin compilation target Java **25**.
 - A .NET SDK capable of building the SDK-style `net472` backend, with .NET Framework 4.7.2 reference assemblies available to MSBuild. The SDK is not pinned with `global.json`; no minimum SDK version has been established.
 - Network access for the initial Gradle, Maven, NuGet, RD model, and Plugin Verifier dependencies. Later runs can reuse local caches; a fully offline first build is not supported.
 
@@ -31,7 +31,7 @@ These are the recorded versions for the existing build. Do not infer compatibili
 Prepare these tools before running the build:
 
 1. Install [PowerShell 7 for Windows](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows) so `pwsh` is available.
-2. Install Rider **2026.2.4.1**, build **`RD-262.11879.119`**, from JetBrains' [other Rider versions](https://www.jetbrains.com/rider/download/other/). That installation supplies the JBR/JDK and ReSharperHost assemblies used by this build.
+2. Install Rider **2026.3**, build **`RD-263.7307.258`**, from JetBrains' [other Rider versions](https://www.jetbrains.com/rider/download/other/). That installation supplies the JBR/JDK and ReSharperHost assemblies used by this build.
 3. Install the [.NET SDK for Windows](https://learn.microsoft.com/en-us/dotnet/core/install/windows), rather than only a .NET runtime, so the `dotnet` command and MSBuild are available.
 
 A matching installed .NET Framework 4.7.2 targeting pack supplies the reference assemblies when available. For an SDK-style project such as this one, the .NET SDK can instead restore `Microsoft.NETFramework.ReferenceAssemblies` implicitly through NuGet when those assemblies are missing. This does not require a Visual Studio installation. See Microsoft's [reference assemblies guidance](https://learn.microsoft.com/en-us/dotnet/framework/migration-guide/reference-assemblies). The project does not establish a minimum SDK version for this behavior.
@@ -75,7 +75,7 @@ This shares downloaded dependencies without copying large cache directories. `.d
 
 The verified local Rider installation does not include the `rider-model.jar` required by RD generation. The supplied helper reads the matching JetBrains distribution using HTTP Range requests and extracts the requested entry; it does not download the complete Rider archive.
 
-The tracked `rider-model.lock.json` records the Rider build, official distribution URI, ZIP entry, byte count, and SHA-256. The 2026.2.4.1 archive contains the same 3,243,012-byte model as 2026.2.3.1: extraction against the existing size/SHA-256 lock passed, with additional strong-ETag, entry-CRC and JAR checks. The lock now points to the matching 2026.2.4.1 distribution. Its SHA-256 is a locally recorded content identity, not a JetBrains-published digest. Use the locked values together:
+The tracked `rider-model.lock.json` records the Rider build, official distribution URI, ZIP entry, byte count, and SHA-256. The 2026.3 model is **3,303,457 bytes**, with SHA-256 **`1DA5BD5CEDB2BB280F78C09762C7DFEE85CC84B4093FA9D6D056C628C1B3907D`**. Its first recorded identity was checked against the official HTTPS archive with a strong ETag, a unique entry, matching ZIP headers, entry CRC and JAR structure, then retrieved again with the production helper against the locked size/hash. This is a locally recorded content identity, not a JetBrains-published digest. Use the locked values together:
 
 ```powershell
 $riderModelLock = Get-Content -LiteralPath .\rider-model.lock.json -Raw | ConvertFrom-Json
@@ -85,10 +85,12 @@ pwsh -NoProfile -File .\tools\Get-RemoteZipEntry.ps1 `
   -ExpectedSize $riderModelLock.size `
   -ExpectedSha256 $riderModelLock.sha256 `
   -OutputPath ".sdk/rider-model.jar" `
-  -CentralDirectoryCachePath ".sdk/riderRD-2026.2.4.1-central-verified.bin"
+  -CentralDirectoryCachePath ".sdk/riderRD-2026.3-central-verified.bin"
 ```
 
 Expected size and SHA-256 are required downloader arguments. A successful extraction verifies them before replacing the output file; printing a newly computed hash alone is not accepted as verification. `RangeTimeoutSeconds` covers each request's headers and body (default 60 seconds). Transient range failures retry up to `MaxAttempts` (default 5); invalid range responses or changed object identities fail without retrying their bodies.
+
+The 2026.3 SDK archive uses ZIP64. The helper supports single-disk ZIP64 V1 directory locators/end records and entry extended fields while keeping Range reads and in-memory sizes bounded. It rejects split archives, ZIP64 V2, inconsistent metadata, unsupported sizes and out-of-range offsets; it does not fall back to downloading the complete SDK. This extraction support changes a source-build utility, not the installed plugin's semantic behavior or runtime dependencies.
 
 The central-directory cache has a `.metadata.json` sidecar binding its URI, strong ETag, archive length, byte range and committed prefix digest. Existing unbound, mismatched or corrupted caches are rejected and preserved; select a new cache path instead of deleting unrelated cached dependencies. Only complete verified chunks are committed. Cache mode requires a strong ETag; without one, omit the cache argument for a fresh extraction that still must pass the expected size/hash checks. Relative paths use the current filesystem directory, full absolute paths are accepted, and drive-relative/root-relative or conflicting destination paths are rejected before network access.
 
@@ -135,7 +137,7 @@ pwsh -NoProfile -File .\build.ps1 remoteZipEntryTest --offline
 pwsh -NoProfile -File .\build.ps1 remoteZipEntryTest --offline --project-prop 'RemoteZipTestPython=C:/Path/To/python.exe'
 ```
 
-This task does not depend on plugin compilation. Its PowerShell harness starts a Python standard-library HTTP fixture bound to loopback, uses small ZIP inputs, and records evidence below `build/remote-zip-tests`. It does not contact the Rider download service or modify the existing `.sdk` model and cache. Python is required only for this regression task, not for normal plugin compilation.
+This task does not depend on plugin compilation. Its PowerShell harness starts a Python standard-library HTTP fixture bound to loopback and records evidence below `build/remote-zip-tests`. The **57 cases** include small ZIP inputs and sparse virtual ZIP64 archives with offsets above 4 GiB; the latter serve bounded ranges without creating or downloading multi-gigabyte files. The task does not contact the Rider download service or modify the existing `.sdk` model and cache. Python is required only for this regression task, not for normal plugin compilation.
 
 The detached logging and call-observation checks run without launching Rider:
 

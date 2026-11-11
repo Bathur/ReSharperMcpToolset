@@ -15,6 +15,7 @@ import struct
 import threading
 import time
 import zipfile
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -66,6 +67,122 @@ with zipfile.ZipFile(io.BytesIO(damaged)) as source:
 damaged[data_start] ^= 1
 archives["damaged"] = bytes(damaged)
 metadata["damaged"] = metadata["stored"]
+
+
+class SparseArchive:
+    """Serve bounded slices at true ZIP64 offsets without a multi-GiB fixture."""
+
+    def __init__(self, size, segments):
+        self.size = size
+        self.segments = segments
+        identity = hashlib.sha256()
+        identity.update(struct.pack("<Q", size))
+        for offset, content in segments:
+            identity.update(struct.pack("<Q", offset))
+            identity.update(content)
+        self.etag_identity = identity.hexdigest()
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, key):
+        start, stop, step = key.indices(self.size)
+        if step != 1 or stop - start > MAX_BODY:
+            raise ValueError("Sparse archive reads must remain bounded byte ranges.")
+        result = bytearray(stop - start)
+        for offset, content in self.segments:
+            overlap_start = max(start, offset)
+            overlap_end = min(stop, offset + len(content))
+            if overlap_start < overlap_end:
+                result[overlap_start - start:overlap_end - start] = content[overlap_start - offset:overlap_end - offset]
+        return bytes(result)
+
+
+def zip64_fixture(name, *, fields=("offset",), wide=False, count_only=False, fault=None):
+    # PKWARE APPNOTE 4.3.14-16 and 4.5.3: central ZIP64 fields occur only
+    # for corresponding sentinels, in size/compressed-size/offset/disk order.
+    content = b"ZIP64 fixture content\n" * 24
+    encoded_name = ENTRY.encode()
+    local_offset = (1 << 32) + 4096 if wide else 0
+    local = struct.pack("<IHHHHHIIIHH", 0x04034B50, 45, 0, 0, 0, 0,
+                        zlib.crc32(content), len(content), len(content), len(encoded_name), 0) + encoded_name + content
+    values = {"size": len(content), "compressed": len(content), "offset": local_offset, "disk": 0}
+    if fault == "extra_overflow":
+        values["offset"] = 1 << 63
+    elif fault == "entry_multidisk":
+        values["disk"] = 1
+    elif fault == "local_outside":
+        values["offset"] = local_offset + len(local) + 4096
+    extra_values = b"".join(struct.pack("<I" if field == "disk" else "<Q", values[field])
+                            for field in ("size", "compressed", "offset", "disk") if field in fields)
+    extra = struct.pack("<HH", 1, len(extra_values)) + extra_values
+    if fault == "missing_extra":
+        extra = b""
+    elif fault == "truncated_extra":
+        extra = struct.pack("<HH", 1, len(extra_values) - 1) + extra_values[:-1]
+    elif fault == "duplicate_extra":
+        extra += extra
+    # Unknown well-formed extra fields before ZIP64 exercise field traversal.
+    if extra:
+        extra = struct.pack("<HH3s", 0xCAFE, 3, b"tag") + extra
+    central = struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, 45, 45, 0, 0, 0, 0,
+                          zlib.crc32(content), 0xFFFFFFFF if "compressed" in fields else len(content),
+                          0xFFFFFFFF if "size" in fields else len(content), len(encoded_name), len(extra), 0,
+                          0xFFFF if "disk" in fields else 0, 0, 0,
+                          0xFFFFFFFF if "offset" in fields else local_offset) + encoded_name + extra
+    central_offset = local_offset + len(local)
+    record_offset = central_offset + len(central)
+    directory_offset = central_offset
+    directory_size = len(central)
+    record_size = 44
+    disk = 0
+    entries_on_disk = entries_total = 1
+    if fault == "central_outside":
+        directory_offset = record_offset + 1
+    elif fault == "central_overflow":
+        directory_offset = (1 << 64) - 1
+    elif fault == "central_oversized":
+        directory_size = (1 << 31)
+    elif fault == "short_record":
+        record_size = 43
+    elif fault == "record_overflow":
+        record_size = (1 << 64) - 1
+    elif fault == "record_multidisk":
+        disk = 1
+    elif fault == "count_mismatch":
+        entries_total = 2
+    record = struct.pack("<IQHHIIQQQQ", 0x06064B50, record_size, 45, 45,
+                         disk, 0, entries_on_disk, entries_total, directory_size, directory_offset)
+    locator = struct.pack("<IIQI", 0x07064B50, 0, record_offset, 2 if fault == "locator_multidisk" else 1)
+    if fault == "missing_locator":
+        locator = b"\0" * len(locator)
+    elif fault == "locator_outside":
+        locator = struct.pack("<IIQI", 0x07064B50, 0, record_offset + 4096, 1)
+    elif fault == "locator_overflow":
+        locator = struct.pack("<IIQI", 0x07064B50, 0, 1 << 63, 1)
+    end = struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 0xFFFF, 0xFFFF,
+                      len(central) if count_only else 0xFFFFFFFF,
+                      central_offset if count_only else 0xFFFFFFFF, 0)
+    ending = record + locator + end
+    data = SparseArchive(record_offset + len(ending), [(local_offset, local), (central_offset, central), (record_offset, ending)])
+    archives[name] = data
+    metadata[name] = {
+        "archive_size": len(data), "central_offset": central_offset, "central_size": len(central),
+        "entry_size": len(content), "sha256": hashlib.sha256(content).hexdigest().upper(),
+        "entry_base64": base64.b64encode(content).decode(), "central_base64": base64.b64encode(central).decode(),
+    }
+
+
+zip64_fixture("zip64_wide_offset", wide=True)
+zip64_fixture("zip64_wide_compressed_offset", fields=("compressed", "offset"), wide=True)
+zip64_fixture("zip64_all_fields", fields=("size", "compressed", "offset", "disk"))
+zip64_fixture("zip64_count_only", fields=("size",), count_only=True)
+for fault in ("missing_locator", "locator_multidisk", "locator_outside", "locator_overflow",
+              "short_record", "record_overflow", "record_multidisk", "count_mismatch",
+              "central_outside", "central_overflow", "central_oversized", "missing_extra",
+              "truncated_extra", "duplicate_extra", "extra_overflow", "local_outside"):
+    zip64_fixture("zip64_" + fault, fault=fault)
+zip64_fixture("zip64_entry_multidisk", fields=("offset", "disk"), fault="entry_multidisk")
 
 
 class State:
@@ -142,7 +259,8 @@ class Handler(BaseHTTPRequestHandler):
             case = state.cases[case_id]
             data = archives[case["archive"]]
             mode = case["mode"]
-            etag = '"' + hashlib.sha256(data).hexdigest()[:16] + '-' + str(case["revision"]) + '"'
+            identity = data.etag_identity if isinstance(data, SparseArchive) else hashlib.sha256(data).hexdigest()
+            etag = '"' + identity[:16] + '-' + str(case["revision"]) + '"'
             request = {
                 "method": self.command, "range": self.headers.get("Range"),
                 "if_match": self.headers.get("If-Match"), "status": None,

@@ -4,7 +4,47 @@ This record describes observed development results for a ReSharper C++ plugin de
 
 The observations below identify the Rider and plugin revisions tested; coverage is limited to the listed environments and scenarios.
 
-## Current release: 0.3.21
+## Current release: 0.3.22
+
+Version 0.3.22 targets **Windows / Rider 2026.3 `RD-263.7307.258`**. It updates the exact Rider bounds and matching RD model while preserving the 0.3.17 semantic implementation, ten tool contracts, RD source and generated files, and build-tool versions. No plugin API adaptation was required.
+
+### Static, source-utility and package checks
+
+On 2026-11-11, forced model verification, RD generation and C#/Kotlin compilation passed using the installed Rider's JBR 25.0.4.1 and .NET SDK 10.0.401. Packaging, configuration validation and all five plugin regression harnesses (`consumerDiagnosticsTest`, `searchNamesTest`, `failureLogTest`, `ownTimeoutTest`, `registrationSafetyTest`) passed. Plugin Verifier **1.411** reported **Compatible** against the single locked local target, with **0 bytes downloaded during verification**. The complete upgrade was not download-free: it retrieved SDK ranges and restored a target-specific compiler helper through the existing build entry point. Exact-build, IDE-layout, test-source and toolchain warnings remain.
+
+The official 2026.3 SDK archive uses ZIP64. The extraction helper now supports single-disk ZIP64 V1 directory records and entry extended fields, retaining bounded Range reads, strong-ETag/cache provenance checks, required expected size/SHA-256 and atomic verified replacement. It rejects multi-disk/V2 layouts and malformed, overflowing or out-of-range metadata. The expanded loopback fixture passed **57 downloader-process cases**, including virtual archives with real offsets above 4 GiB and bounded transferred bytes. The fixture did not allocate or download multi-gigabyte archives. These checks do not establish general ZIP/ZIP64 or every HTTP server/proxy behavior.
+
+The new 3,303,457-byte model identity was established from the official HTTPS archive with strong-ETag, unique-entry, ZIP-header/CRC and JAR checks, then retrieved again through the production helper against the new lock. Its SHA-256 is a locally recorded content identity, not a JetBrains-published digest. The complete Rider archive was not downloaded. RD generation left both generated protocol files unchanged.
+
+Package checks confirmed plugin version 0.3.22, exact Rider bounds, backend 0.3.22.0, all 122 packaged classes targeting Java 25, and the required source/license notices. The ZIP contained no backend PDB, host DLLs or test classes. Installed DLL/JAR hashes matched the verified package; frontend/backend logs and the loaded backend module confirmed this version.
+
+### Exported-source verification
+
+The 55-file public source snapshot was independently built through its own build entry point with `--rerun-tasks --no-build-cache --offline`, using the same installed Rider and .NET SDK 10.0.401. It reused downloaded dependencies through `-CacheRoot` and read the existing locked model; project state and build outputs belonged to the snapshot. All **27 scheduled tasks executed and passed**: model verification, RD generation, C#/Kotlin compilation, packaging, configuration checks, all six isolated harnesses and Plugin Verifier. The downloader harness passed its **57 loopback-only cases**, using an existing Python 3.12.11 runtime selected with the documented option.
+
+Plugin Verifier **1.411** reported **Compatible** against the exact target, with **0 bytes downloaded in this verification run**. The independently rebuilt plugin ZIP was byte-for-byte identical to the installed package exercised below. Export verification confirmed that all 55 source inputs, including regenerated protocol files, remained unchanged after the build. The subsequent documentation-only update and export do not repeat the binary build or installed semantic regression. These checks establish the tested source/package correspondence; they are not an empty-cache first build or a repeat of the live semantic matrix.
+
+### Installed representative regression
+
+Codex discovered all ten custom tools. Seven read-only calls covered the existing representative scenarios. Every call returned `ok`, query-level diagnostics were empty, and all paged responses had no skipped results or additional pages:
+
+| Scenario | Observed result |
+| --- | --- |
+| Exact `IsExperienceLoaded` search | Two candidates |
+| Inspection of selected returned navigation | Canonical identity, signature, navigation and declaration/definition counts matched the search summary |
+| Direct references to that member | Thirteen unique mapped locations; this count describes the current project/index state |
+| `LyraExperienceManagerComponent.h` outline | 37 items, normalized English kinds, hierarchy, constructor, and no namespace signature |
+| Component direct bases | `UGameStateComponent` and `ILoadingProcessInterface` |
+| Component EndPlay upstream member | One direct `UActorComponent::EndPlay`, canonical signature and definition navigation, with one declaration and one definition |
+| ShooterCore diagnostics | The same four warnings at lines 9, 15, 171 and 213; 1,588 raw highlightings, 1,584 below the severity filter, and no mapping/metadata omissions |
+
+The EndPlay summary matched the canonical expectation in this run, so no additional inspection comparison was made. A single healthy result does not resolve the previously observed state-dependent summary discrepancy or determine its cause. External-source position mapping and conversion-query completeness/performance also remain known limits.
+
+The bounded log review corresponded to all seven calls and the backend reference/diagnostic counts. No explicit plugin API, protocol or wrong-thread failure was observed in that window. Two generic Rider thread-pool-exhaustion warnings and an approximately 0.602-second RD latency/FlushAll watchdog occurred alongside PCH and other host activity. Their cause was not established, and a contribution from plugin/host workloads was not excluded. The results do not establish a stall-free or warning-free IDE session.
+
+The project's existing modified/untracked file state and the hashes of those files were unchanged after the queries. No source files or project items were edited or registered, and no target-project build or PIE session was launched for this regression. These checks do not repeat the full semantic/performance matrix, downstream inheritance/overrides, pagination, deliberate timeout/cancellation, fresh registration or special-name cases.
+
+## Previous compatibility release: 0.3.21
 
 Version 0.3.21 targets **Windows / Rider 2026.2.4.1 `RD-262.11879.119`**. It changes the exact Rider bounds and the matching SDK distribution URI, preserving the 0.3.17 semantic implementation, ten tool contracts, RD source and generated files. The model extracted from the official 2026.2.4.1 SDK matched the previous locked size and SHA-256; additional strong-ETag, entry-CRC and JAR checks passed. The active model did not need replacement.
 
@@ -347,7 +387,7 @@ Plugin Verifier **1.410** reported **Compatible** against **`RD-262.10315.191`**
 
 ## Interpretation and limits
 
-- Windows and Rider 2026.2.4.1 `RD-262.11879.119` are the current target. Version 0.3.21 completed static and isolated checks, installed-version binding and the representative runtime scenarios above, including a recurrence of the known EndPlay summary limitation. Earlier scenarios remain historical evidence for their stated Rider/plugin versions. Other operating systems and arbitrary .NET SDK versions have not been validated.
+- Windows and Rider 2026.3 `RD-263.7307.258` are the current target. Version 0.3.22 completed static and isolated checks, installed-version binding and the representative runtime scenarios above. EndPlay was healthy in this sample, but its previously observed summary limitation remains unresolved. Earlier scenarios remain historical evidence for their stated Rider/plugin versions. Other operating systems and arbitrary .NET SDK versions have not been validated.
 - Measured times are observations from selected local queries, not benchmarks, service-level targets, or performance guarantees. Cold Rider computations may be slow; moving a query off the primary thread does not guarantee an entirely hitch-free IDE.
 - Semantic coverage follows Rider's loaded project model, index, PSI contexts, and ability to map physical files. Empty, partial, unsupported, or not-indexed results must be interpreted using the response diagnostics; no text-search fallback is used to simulate semantic success.
 - An available primary-file context does not guarantee that position-based queries can reach it. The external-source routing gap and EndPlay summary inconsistency described for 0.3.17 remain unresolved; a successful status alone is not proof that all metadata or result sets are complete.
