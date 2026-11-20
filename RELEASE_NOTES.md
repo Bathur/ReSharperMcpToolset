@@ -1,5 +1,19 @@
 # Release notes
 
+## 0.3.23
+
+Version 0.3.23 targets **Windows / Rider 2026.3.0.1 `RD-263.7307.325`**. Use 0.3.22 for the previous Rider build `RD-263.7307.258`.
+
+- Updates both Rider build bounds and locks the matching SDK's `rider-model.jar` by size and SHA-256.
+- Regenerating the protocol with the new model produced the same Kotlin and C# sources. The ten tools retain their existing contracts and semantic implementation.
+- RD generation, C# and Kotlin compilation, packaging, configuration validation and five isolated plugin checks passed. JetBrains Plugin Verifier 1.411 reported **Compatible** for the target build.
+
+The 55-file source snapshot independently rebuilt the same 405,497-byte plugin ZIP that was tested in Rider. All 27 build and validation tasks ran offline using existing dependency caches and the locked model. The six isolated checks passed, including 57 loopback downloader cases.
+
+Rider loaded the verified package, and Codex discovered all ten tools. Six of seven representative read-only scenarios met their expectations. The seventh returned the correct direct upstream `UActorComponent::EndPlay`, but its signature, navigation and declaration count differed from an additional inspection at the returned position. All eight calls reported `ok` with empty query diagnostics. Inspect the upstream member when those details matter.
+
+At startup, Rider's lightweight backend twice reported a missing C++ service while constructing the plugin component. The same error was recorded with 0.3.22. The main backend served the semantic queries. [Validation record](docs/VALIDATION.md)
+
 ## 0.3.22
 
 This compatibility update targets **Windows / Rider 2026.3 `RD-263.7307.258`**. Both Rider build bounds are pinned to this exact target; earlier Rider builds require their matching earlier plugin package.
