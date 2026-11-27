@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.3.24
+
+Use version **0.3.24** with **Rider 2026.3.0.2 on Windows, build `RD-263.7307.355`**. Use 0.3.23 for Rider 2026.3.0.1 (`RD-263.7307.325`).
+
+The plugin pins both compatibility bounds to the new build. The model extracted from the matching Rider SDK has the same size and SHA-256 as the 0.3.23 input. The ten existing tools compiled against the new host. Plugin Verifier 1.411 reported **Compatible**.
+
+The 55-file public source snapshot reproduced the 405,501-byte plugin ZIP used for the installed regression. All 27 build and validation tasks ran offline with existing dependency caches. All six isolated checks passed, including 57 SDK downloader cases.
+
+Seven read-only scenarios and one follow-up inspection on an indexed Lyra project returned exactly the same responses as 0.3.23. Six scenarios met all expectations. The override query found the correct direct base method, `UActorComponent::EndPlay`, but its summary again differed from direct inspection in signature, navigation and declaration count. Use `resharper_cpp_inspect_symbol` at the returned position for those details. The lightweight backend also repeated its two startup errors about a missing C++ service. The main backend handled all eight calls. [Validation record](docs/VALIDATION.md)
+
 ## 0.3.23
 
 Version 0.3.23 targets **Windows / Rider 2026.3.0.1 `RD-263.7307.325`**. Use 0.3.22 for the previous Rider build `RD-263.7307.258`.

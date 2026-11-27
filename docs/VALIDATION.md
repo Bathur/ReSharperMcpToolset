@@ -4,7 +4,40 @@ This record describes observed development results for a ReSharper C++ plugin de
 
 The observations below identify the Rider and plugin revisions tested; coverage is limited to the listed environments and scenarios.
 
-## Current release 0.3.23
+## Current release 0.3.24
+
+On 2026-11-27, validation used **Rider 2026.3.0.2 on Windows, build `RD-263.7307.355`**. The build and the packaged plugin descriptor both require that exact Rider build.
+
+### Build and installed package
+
+The SDK helper extracted the unique `lib/rd/rider-model.jar` entry from the 2026.3.0.2 archive. Its size, SHA-256 and CRC-32 matched the previous SDK model. Regenerating the protocol produced the same Kotlin and C# source files. [RD model details](BUILDING.md#obtain-the-rd-model-input)
+
+The Kotlin frontend compiled with Rider's JBR 25.0.4.1. The C# backend compiled with .NET SDK 10.0.401 against the installed Rider's ReSharperHost assemblies. Packaging, configuration validation and all five isolated checks passed. Plugin Verifier 1.411 reported **Compatible** for the 405,501-byte plugin ZIP. The installed JAR and DLL matched the package entries by SHA-256. The main backend loaded assembly version `0.3.24.0`.
+
+### Build from the public source snapshot
+
+The 55-file snapshot was built with its own `build.ps1`, the locked RD model and existing dependency caches. All 27 scheduled tasks executed in 7 minutes 31 seconds with `--offline --rerun-tasks --no-build-cache`. All six isolated checks passed, including 57 loopback SDK downloader cases. Plugin Verifier 1.411 reported **Compatible** for `RD-263.7307.355` and downloaded 0 bytes during verification.
+
+The rebuilt ZIP matched the package used for the installed regression byte for byte. Its SHA-256 was `E49B4074658F203F25D75CAA9FA357E722F3F68CC001087606651D7E7AA9C88A`. After the build, all 55 source files matched the inputs, including both generated protocol files.
+
+### Installed Lyra regression
+
+Codex discovered all ten tools. On the indexed Lyra project, seven read-only scenarios and one follow-up inspection used the same inputs and returned the same full responses as the 0.3.23 run. Every call returned `ok` with empty query diagnostics. Every paged result fit on one page with zero skipped items.
+
+| Scenario | Observed result |
+| --- | --- |
+| Search for `IsExperienceLoaded` and inspect the component method | Two same-name candidates. Inspection confirmed `bool() const`, one declaration and one definition. |
+| Direct references | 13 distinct physical locations |
+| Component header outline | 37 entries, including the constructor, with the expected nesting |
+| Component's direct base types | `UGameStateComponent` and `ILoadingProcessInterface` |
+| Component's `EndPlay` override | One direct base method, `UActorComponent::EndPlay`. Its summary again failed the consistency check below. |
+| ShooterCore diagnostics | Four warnings in `AimAssistTargetManagerComponent.cpp`. Unused includes at lines 9 and 15, an unused local at line 171, and unreachable code at line 213. |
+
+The hierarchy summary pointed to `ActorComponent.h:949:26`, gave the signature `void(const EEndPlayReason::Type EndPlayReason)` and reported zero declarations and one definition. Inspecting that position returned `ActorComponent.cpp:1664:23`, the signature `void(EEndPlayReason::Type)`, one declaration and one definition. The relationship and symbol identity agreed.
+
+The main backend served all eight calls. Its log recorded no plugin exception or watchdog during the queries. At startup, the lightweight backend twice reported that `ReSharperCppSemanticComponent` could not resolve `ICppUE4ModuleNamesProvider`, as in 0.3.23.
+
+## Previous compatibility release 0.3.23
 
 Version 0.3.23 targets **Windows / Rider 2026.3.0.1 `RD-263.7307.325`**. Both descriptor bounds require this build. The compatibility update changes the target build and the matching RD model lock.
 
@@ -435,7 +468,7 @@ Plugin Verifier **1.410** reported **Compatible** against **`RD-262.10315.191`**
 
 ## Interpretation and limits
 
-- Version 0.3.23 targets Windows and Rider 2026.3.0.1 `RD-263.7307.325`. Six of seven installed scenarios met their expectations. The upstream `EndPlay` member was correct, but an additional inspection at its returned position gave a different signature, preferred navigation and declaration count. Earlier results apply to the Rider and plugin versions recorded with each run.
+- Version 0.3.24 targets Rider 2026.3.0.2 on Windows (`RD-263.7307.355`). The installed sample covers seven read-only scenarios and a follow-up inspection of the `EndPlay` summary. Other coverage applies to the Rider and plugin versions recorded with each run.
 - Measured times are observations from selected local queries, not benchmarks, service-level targets, or performance guarantees. Cold Rider computations may be slow; moving a query off the primary thread does not guarantee an entirely hitch-free IDE.
 - Semantic coverage follows Rider's loaded project model, index, PSI contexts, and ability to map physical files. Empty, partial, unsupported, or not-indexed results must be interpreted using the response diagnostics; no text-search fallback is used to simulate semantic success.
 - An available primary-file context does not guarantee that position-based queries can reach it. The external-source routing gap and EndPlay summary inconsistency described for 0.3.17 remain unresolved; a successful status alone is not proof that all metadata or result sets are complete.

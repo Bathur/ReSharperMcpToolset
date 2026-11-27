@@ -4,7 +4,7 @@
 
 ReSharper MCP Toolset brings ReSharper C++ semantic capabilities to AI assistants through JetBrains Rider's built-in MCP server. Designed around Unreal Engine C++ development workflows, it lets an assistant inspect symbols, trace references, explore inheritance and overrides, read declaration outlines, and query C++ diagnostics in the context of your loaded project.
 
-Version **0.3.23** targets **Windows / Rider 2026.3.0.1 `RD-263.7307.325`**. It updates the exact Rider build and the RD model used to generate the protocol. All ten tools use the same contracts and C++ implementation as 0.3.22. The installed regression reproduced the known difference between the upstream `EndPlay` summary and direct inspection. [Release notes](RELEASE_NOTES.md) · [Validation record](docs/VALIDATION.md)
+Version **0.3.24** targets **Rider 2026.3.0.2 on Windows**. On an indexed Lyra project, all eight read-only calls returned the same responses as 0.3.23, including the known discrepancy in the upstream `EndPlay` summary. [Release notes](RELEASE_NOTES.md) · [Validation record](docs/VALIDATION.md)
 
 It runs inside Rider and uses the same ReSharper C++ project model and semantic infrastructure that power the IDE. Game modules, GameFeature plugins, Engine source, templates, and Unreal reflection macros shaped its design and validation. This is a Rider plugin; it does not need to be installed in your Unreal project.
 
@@ -31,7 +31,7 @@ For parameters, response fields, and troubleshooting details, see the [tool refe
 
 ## Requirements
 
-- **Windows and JetBrains Rider 2026.3.0.1, build `RD-263.7307.325`.** Both plugin compatibility bounds specify this exact build. For Rider 2026.3 `RD-263.7307.258`, use plugin 0.3.22.
+- **Windows and JetBrains Rider 2026.3.0.2, build `RD-263.7307.355`.** Both plugin compatibility bounds specify this exact build. For Rider 2026.3.0.1 (`RD-263.7307.325`), use plugin 0.3.23.
 - Rider's C++ support and bundled MCP Server plugin enabled.
 - A project or solution loaded in Rider, with the relevant C++ files registered and indexed. Engine and library queries require those sources to be known to Rider.
 - An MCP client connected to Rider. Runtime validation has used Codex; other clients have not been independently validated by this project.
